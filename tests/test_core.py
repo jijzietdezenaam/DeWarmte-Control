@@ -489,3 +489,19 @@ if __name__ == "__main__":
             except Exception as ex:
                 fails += 1; print("FAIL", name, repr(ex))
     sys.exit(1 if fails else 0)
+
+def test_room_max_caps_bedrooms_and_overrides():
+    p = pl.PricePlanner(pl.PlanSettings(room_max=20.0), capped=["climate.slaapkamer"])
+    p.offset = 1.5
+    presets = {"comfort_temp": 20.5, "eco_temp": 19.0}
+    noon = __import__("time").mktime((2026, 11, 16, 12, 0, 0, 0, 0, -1))
+    t, why = p.room_target("climate.slaapkamer", presets, True, noon, None)
+    assert t == 20.0 and "maximum" in why
+    t2, _ = p.room_target("climate.woonkamer", presets, True, noon, None)
+    assert t2 == 22.0
+    p.wrote("climate.slaapkamer", 20.0, noon - 600)              # handmatig naar 22: toch begrensd
+    t3, why3 = p.room_target("climate.slaapkamer", presets, True, noon, 22.0)
+    assert t3 == 20.0
+    p.wrote("climate.slaapkamer", 20.0, noon - 600)              # handmatig naar 19 (onder max) blijft gerespecteerd
+    t4, why4 = p.room_target("climate.slaapkamer", presets, True, noon, 19.0)
+    assert t4 is None and "handmatig" in why4

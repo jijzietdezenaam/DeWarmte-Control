@@ -21,7 +21,8 @@
           "presence_entity": "Aanwezigheid (aan = iemand thuis)",
           "price_service": "Prijsvoorspelling-dienst (bijv. tibber.get_prices)",
           "warm_periods": "Warme periodes per kamer, één regel per kamer: climate.badkamer | 21 | ma-vr 05:30-07:30, 20:00-22:30 | za-zo 08:00-10:00, 20:00-22:30",
-          "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)"
+          "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)",
+          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)"
         }
       }
     },
@@ -48,7 +49,8 @@
           "max_supply": "Maximale aanvoer (°C)",
           "heating_stop_outdoor": "Stookgrens: geen verwarming boven (°C buiten)",
           "silent_above": "Altijd Stil boven (°C buiten)",
-          "silent_release": "Opschalen toegestaan onder (°C buiten)",
+          "silent_release": "Koud: Normaal/opschalen onder (°C buiten)",
+          "normal_when_cold": "Bij kou minimaal Normaal (1 = aan, 0 = eerst Stil)",
           "dhw_floor": "Tapwater minimum (°C)",
           "dhw_max": "Tapwater maximum bij normale prijs (°C)",
           "dhw_max_negative": "Tapwater maximum bij negatieve prijs (°C)",
@@ -67,6 +69,7 @@
           "band_down": "Prijsslim: max. laten zakken onder normaal doel (K)",
           "gain": "Prijsslim: gevoeligheid voor prijsverschil",
           "hold_min": "Prijsslim: minimale duur van een kamerdoel (min)",
+          "room_max": "Absoluut maximum kamerdoel voor die kamers (°C)",
           "night_start": "Nachtverlaging vanaf (uu:mm)",
           "morning_weekday": "Ochtend werkdag vanaf (uu:mm)",
           "morning_weekend": "Ochtend weekend vanaf (uu:mm)",
@@ -75,7 +78,8 @@
           "warm_periods": "Warme periodes per kamer, één regel per kamer: climate.badkamer | 21 | ma-vr 05:30-07:30, 20:00-22:30 | za-zo 08:00-10:00, 20:00-22:30",
           "legionella_auto_days": "Automatische desinfectie na zoveel dagen zonder ≥ 60 °C (0 = uit)",
           "dhw_usage_temp": "Tapwater boven minimaal op geleerde tapmomenten (°C, 0 = uit)",
-          "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)"
+          "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)",
+          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)"
         }
       }
     }

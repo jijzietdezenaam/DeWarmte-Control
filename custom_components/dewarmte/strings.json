@@ -21,7 +21,8 @@
           "presence_entity": "Presence (on = someone home)",
           "price_service": "Price forecast service (e.g. tibber.get_prices)",
           "warm_periods": "Warm periods per room, one line per room: climate.bathroom | 21 | ma-vr 05:30-07:30, 20:00-22:30 | za-zo 08:00-10:00",
-          "cold_alert_exclude": "Rooms without 'stays too cold' alert (e.g. toilet)"
+          "cold_alert_exclude": "Rooms without 'stays too cold' alert (e.g. toilet)",
+          "max_temp_rooms": "Rooms with an absolute maximum (e.g. bedrooms)"
         }
       }
     },
@@ -48,7 +49,8 @@
           "max_supply": "Maximum supply (°C)",
           "heating_stop_outdoor": "No heating above (°C outside)",
           "silent_above": "Always Silent above (°C outside)",
-          "silent_release": "Scaling allowed below (°C outside)",
+          "silent_release": "Cold: Normal/scaling below (°C outside)",
+          "normal_when_cold": "When cold at least Normal (1 = on, 0 = start Silent)",
           "dhw_floor": "DHW minimum (°C)",
           "dhw_max": "DHW maximum at normal price (°C)",
           "dhw_max_negative": "DHW maximum at negative price (°C)",
@@ -67,6 +69,7 @@
           "band_down": "Price: max setback below normal target (K)",
           "gain": "Price: sensitivity to price difference",
           "hold_min": "Price: minimum hold of a room target (min)",
+          "room_max": "Absolute maximum room target for those rooms (°C)",
           "night_start": "Night setback from (hh:mm)",
           "morning_weekday": "Weekday morning from (hh:mm)",
           "morning_weekend": "Weekend morning from (hh:mm)",
@@ -75,7 +78,8 @@
           "warm_periods": "Warm periods per room, one line per room: climate.bathroom | 21 | ma-vr 05:30-07:30, 20:00-22:30 | za-zo 08:00-10:00",
           "legionella_auto_days": "Automatic disinfection after days without ≥ 60 °C (0 = off)",
           "dhw_usage_temp": "DHW top minimum at learned usage times (°C, 0 = off)",
-          "cold_alert_exclude": "Rooms without 'stays too cold' alert (e.g. toilet)"
+          "cold_alert_exclude": "Rooms without 'stays too cold' alert (e.g. toilet)",
+          "max_temp_rooms": "Rooms with an absolute maximum (e.g. bedrooms)"
         }
       }
     }

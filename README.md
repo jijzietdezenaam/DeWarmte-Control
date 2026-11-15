@@ -209,3 +209,9 @@ Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meest
 - Na een herstart in de hysteresezone kiest de regeling op het midden van de twee grenzen in plaats van altijd "warm".
 - Valt de buitentemperatuur even weg (rond het ontdooien gaf de SunRain soms geen waarde), dan houdt de regeling de
   laatste geldige waarde tot 2 uur vast. Voorheen rekende de stooklijn dan met 5 °C en zakte het aanvoersetpoint 2 K.
+
+## Nieuw in 3.5.6: absoluut maximum per kamer
+- Optie *Kamers met een absoluut maximum* (standaard: alle kamers met "slaapkamer" in de naam) en
+  *Absoluut maximum kamerdoel* (standaard 20 °C). Prijsslim voorverwarmen en warme periodes gaan daar nooit
+  boven; een handmatig hoger doel wordt ook teruggezet. Lager zetten blijft gewoon gerespecteerd.
+- Labels voor *Koud: Normaal/opschalen onder* en *Bij kou minimaal Normaal* toegevoegd aan de vertalingen.

@@ -34,6 +34,7 @@ class PlanSettings:
     lead_min: float = 30.0          # warme periode zoveel eerder beginnen (opwarmtijd)
     dhw_rank_max: float = 0.10      # goedkoopste 10 % van het komende etmaal: boiler naar maximum
     dhw_rank_mid: float = 0.25      # goedkoopste 25 %: boiler naar middenstand
+    room_max: float = 20.0          # absoluut maximum kamerdoel voor de kamers in PricePlanner.capped
 
     @classmethod
     def from_dict(cls, d: dict) -> "PlanSettings":
@@ -102,8 +103,10 @@ def _q(x: float, step: float) -> float:
 
 
 class PricePlanner:
-    def __init__(self, s: PlanSettings, state: dict | None = None, schedules: str | None = None) -> None:
+    def __init__(self, s: PlanSettings, state: dict | None = None, schedules: str | None = None,
+                 capped: list | None = None) -> None:
         self.s = s
+        self.capped: set[str] = set(capped or [])      # kamers met absoluut maximum s.room_max
         self.schedules = parse_schedules(schedules)
         st = state or {}
         self.cool_rate: dict[str, float] = dict(st.get("cool_rate") or {})   # K/u (positief = afkoelen)
@@ -272,6 +275,10 @@ class PricePlanner:
         if base is None:
             return None, "geen preset-temperaturen"
         warm = self.warm_period(room, wall) if home else None
+        capped = room in self.capped
+        if capped and current_target is not None and current_target > s.room_max + 0.05:
+            self.override_until.pop(room, None)          # boven het maximum: ook handmatig niet toestaan
+            self.last_written.pop(room, None)
         # handmatige wijziging respecteren
         last = self.last_written.get(room)
         if last and current_target is not None and abs(current_target - last[0]) > 0.05 and wall - last[1] > 120:
@@ -286,7 +293,10 @@ class PricePlanner:
             base, label = warm, "warme periode"
         target = _q(base + self.offset, 0.5 if s.step >= 0.5 else s.step)
         target = max(base - s.band_down, min(base + s.band_up, target))
-        return target, f"{label} {base:g} + prijs {self.offset:+g}"
+        why = f"{label} {base:g} + prijs {self.offset:+g}"
+        if capped and target > s.room_max:
+            target, why = s.room_max, f"{why}, begrensd op maximum {s.room_max:g}"
+        return target, why
 
     def wrote(self, room: str, target: float, wall: float) -> None:
         self.last_written[room] = (target, wall)

@@ -1,6 +1,6 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.5.5"
+VERSION = "3.5.6"
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number"]
 
 CONF_UP_TOPIC = "up_topic"
@@ -16,6 +16,7 @@ CONF_PRESENCE = "presence_entity"    # aan = iemand thuis
 CONF_PRICE_SERVICE = "price_service"  # bijv. tibber.get_prices
 CONF_SCHEDULES = "warm_periods"       # extra warme periodes per kamer (tekst)
 CONF_COLD_EXCLUDE = "cold_alert_exclude"  # kamers zonder "blijft te koud"-melding
+CONF_CAPPED = "max_temp_rooms"          # kamers met een absoluut maximum kamerdoel (room_max)
 
 # sleutel: (min, max, stap, label NL, label EN) - standaardwaarden staan in engine.Settings
 SETTING_FIELDS = {
@@ -49,6 +50,7 @@ PLAN_FIELDS = {
     "band_down": (0, 3, 0.5, "Prijsslim: max. laten zakken onder normaal doel (K)", "Price: max setback below normal target (K)"),
     "gain": (0.5, 6, 0.5, "Prijsslim: gevoeligheid voor prijsverschil", "Price: sensitivity to price difference"),
     "hold_min": (15, 180, 15, "Prijsslim: minimale duur van een kamerdoel (min)", "Price: minimum hold of a room target (min)"),
+    "room_max": (15, 25, 0.5, "Absoluut maximum kamerdoel voor gekozen kamers (°C)", "Absolute maximum room target for selected rooms (°C)"),
 }
 PLAN_TIMES = {"night_start": "Nachtverlaging vanaf (uu:mm)", "morning_weekday": "Ochtend werkdag vanaf (uu:mm)",
               "morning_weekend": "Ochtend weekend vanaf (uu:mm)"}

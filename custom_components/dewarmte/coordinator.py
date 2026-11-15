@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import registers as R
 from .bus import ModbusBus, ModbusError, ModbusTimeout, read_registers
-from .const import (CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_OUTDOOR, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
+from .const import (CONF_CAPPED, CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_OUTDOOR, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
                     CONF_UP_TOPIC, DOMAIN)
 from .engine import Engine, Inputs, Room, Settings
 from .insights import Alerts, CycleCounter, DhwLearner, DhwSettings, WeekStats
@@ -71,7 +71,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.service_until = 0.0             # monotonic; servicemodus aan zolang now < service_until
         self.disinfect: dict | None = None   # actieve handmatige desinfectie
         self.vent: dict | None = None        # actief ontluchtprogramma (816 bit 4)
-        self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), None, self.cfg.get(CONF_SCHEDULES))
+        self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), None, self.cfg.get(CONF_SCHEDULES),
+                                    self._capped_rooms())
         self.plan_enabled = True
         self._last_plan = 0.0
         self._last_price_fetch = 0.0
@@ -93,7 +94,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.engine = Engine(self.settings, stored)
         self.control_enabled = bool(stored.get("control_enabled", True))
         self.plan_enabled = bool(stored.get("plan_enabled", True))
-        self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), stored.get("planner"), self.cfg.get(CONF_SCHEDULES))
+        self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), stored.get("planner"), self.cfg.get(CONF_SCHEDULES),
+                                    self._capped_rooms())
         self.cycles = CycleCounter(stored.get("cycles"))
         self.dhw = DhwLearner(DhwSettings(usage_temp=self.settings.dhw_usage_temp or 50.0), stored.get("dhw"))
         self.week = WeekStats(stored.get("week"))
@@ -488,6 +490,13 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             rows.append({"id": ent, "name": a.get("friendly_name", ent), "current": _f(a.get("current_temperature")),
                          "target": _f(a.get("temperature")), "heating": st.state == "heat" and not window})
         return rows
+
+    def _capped_rooms(self) -> list[str]:
+        """Kamers met absoluut maximum; niet ingesteld = alle kamers met 'slaapkamer' in de naam."""
+        capped = self.cfg.get(CONF_CAPPED)
+        if capped is None:
+            capped = [e for e in self.cfg.get(CONF_ROOMS, []) if "slaapkamer" in e]
+        return list(capped)
 
     async def _insights_step(self, v: dict, decision: dict, status: dict) -> None:
         wall = time.time()
