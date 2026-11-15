@@ -1,6 +1,6 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.5.4"
+VERSION = "3.5.5"
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number"]
 
 CONF_UP_TOPIC = "up_topic"
@@ -31,7 +31,8 @@ SETTING_FIELDS = {
     "dhw_usage_temp": (0, 60, 1, "Tapwater boven minimaal op geleerde tapmomenten (°C, 0 = uit)", "DHW top minimum at learned usage times (°C, 0 = off)"),
     "legionella_auto_days": (0, 21, 1, "Automatische desinfectie na zoveel dagen zonder ≥ 60 °C (0 = uit)", "Automatic disinfection after days without ≥ 60 °C (0 = off)"),
     "silent_above": (-5, 10, 0.5, "Altijd Stil boven (°C buiten)", "Always Silent above (°C outside)"),
-    "silent_release": (-5, 10, 0.5, "Opschalen toegestaan onder (°C buiten)", "Scaling allowed below (°C outside)"),
+    "silent_release": (-5, 10, 0.5, "Koud: Normaal/opschalen onder (°C buiten)", "Cold: Normal/scaling below (°C outside)"),
+    "normal_when_cold": (0, 1, 1, "Bij kou minimaal Normaal (1 = aan, 0 = eerst Stil)", "When cold at least Normal (1 = on, 0 = start Silent)"),
     "dhw_floor": (35, 60, 1, "Tapwater minimum (°C)", "DHW minimum (°C)"),
     "dhw_max": (45, 70, 1, "Tapwater maximum bij normale prijs (°C)", "DHW maximum at normal price (°C)"),
     "dhw_max_negative": (45, 70, 1, "Tapwater maximum bij negatieve prijs (°C)", "DHW maximum at negative price (°C)"),

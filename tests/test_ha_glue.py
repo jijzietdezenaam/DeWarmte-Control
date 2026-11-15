@@ -139,7 +139,7 @@ async def main():
         data = await c._async_update_data()
         await asyncio.sleep(0)
     d, v, s = data["d"], data["v"], data["s"]
-    assert v["t_supply"] == 23 and v["set_heating"] == 31 and v["power_mode"] == 2   # 30,25 + 0,75 preset-correctie
+    assert v["t_supply"] == 23 and v["set_heating"] == 31 and v["power_mode"] == 0   # 30,25 + 0,75 preset-correctie; 1,5 °C = Normaal (3.5.5)
     assert s[16]["ok"] is False and s[1]["ok"] is True and d["blocks"] == []   # slave 16 stuk blokkeert niets
     assert (1, 281) not in [(k[0], k[1]) for k in c._raw]                    # gat in register blijft ontbreken
     assert d["outdoor_used"] == 1.5 and d["season_heating"] is True
@@ -151,7 +151,7 @@ async def main():
     for desc in binm.BINARIES:
         assert desc.value_fn({**data, "c": c}) in (True, False, None), desc.key
     # schrijven: alleen toegestane registers, met echo bevestigd
-    assert sorted(writes) == [(1, 769, 31), (2, 6, 60)], writes            # goedkoopste uur: boiler naar 60
+    assert sorted(writes) == [(1, 769, 31), (1, 775, 0), (2, 6, 60)], writes           # goedkoopste uur: boiler naar 60
     assert c._raw[(1, 769)][0] == 31 and len(c.actions) >= 3 and all(a["ok"] for a in c.actions), c.actions
     # prijsplanner: nu goedkoop, straks duur -> voorverwarmen, kamerdoelen via climate.set_temperature
     assert c.planner.offset == 1.5 and d["feedforward"] == 0.75
@@ -164,7 +164,7 @@ async def main():
     # schakelaar uit -> geen writes meer
     await c.async_set_control(False, "test"); MAPS[1][769] = 25
     for _ in range(2): await c._async_update_data()
-    assert len(writes) == 2
+    assert len(writes) == 3
     lw = c.planner.last_written["climate.a"]; c.planner.last_written["climate.a"] = (lw[0], lw[1] - 300)
     h.states.d["climate.a"].attributes["temperature"] = 21.0                  # gebruiker past zelf aan
     c._last_plan = 0; await c._async_update_data()

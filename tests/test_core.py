@@ -167,9 +167,31 @@ def test_cold_escalates_then_deescalates():
     for t in range(0, 7200, 30):                          # aanhoudend tekort van >3 K bij -5 °C
         seen.append(e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), t_supply=27))["power_mode_desired"])
     assert eng.NORMAL in seen and seen[-1] == eng.BOOST
-    for t in range(7200, 12000, 30):                      # setpoint gehaald
+    for t in range(7200, 12000, 30):                      # setpoint gehaald: terug naar Normaal (bodem bij kou)
+        d = e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), f_comp=30, t_supply=40))
+    assert d["power_mode_desired"] == eng.NORMAL
+
+def test_cold_starts_normal_and_stays_normal():
+    e = eng.Engine(eng.Settings())
+    for t in range(0, 3600, 30):                          # 1 °C, aanvoer schiet door: toch Normaal
+        d = e.update(inp(t, outdoor=1.0, rooms=rooms(80, 19, 21), f_comp=30, t_supply=45))
+        assert d["power_mode_desired"] == eng.NORMAL
+
+def test_cold_old_behaviour_when_disabled():
+    e = eng.Engine(eng.Settings(normal_when_cold=0.0))
+    seen = []
+    for t in range(0, 7200, 30):
+        seen.append(e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), t_supply=27))["power_mode_desired"])
+    assert seen[0] == eng.SILENT and seen[-1] == eng.BOOST
+    for t in range(7200, 12000, 30):
         d = e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), f_comp=30, t_supply=40))
     assert d["power_mode_desired"] == eng.SILENT
+
+def test_restart_in_hysteresis_band_picks_middle():
+    e = eng.Engine(eng.Settings()); e.update(inp(0, outdoor=2.3))
+    assert e.cold is True                                    # 2,3 ≤ 2,5 (midden van 2 en 3)
+    e = eng.Engine(eng.Settings()); e.update(inp(0, outdoor=2.8))
+    assert e.cold is False
 
 def test_hysteresis_2_3_degrees():
     e = eng.Engine(eng.Settings()); e.update(inp(0, outdoor=1.0))

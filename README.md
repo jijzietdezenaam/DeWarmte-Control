@@ -43,7 +43,7 @@ staan op de laatste waarden. Deze keuze blijft bewaard na een herstart.
   zonder TRV-vraag, omdat de Jaga's in hal, toilet en bijkeuken geen TRV hebben. Instelbaar in de opties.
 - Boven 10 °C: aan bij warmtevraag (klep ≥ 10 % of tekort ≥ 0,4 K), uit na 45 min zonder vraag.
 - Geen verwarming boven 18 °C buiten (hervat onder 16 °C).
-- Vermogensmodus: boven 3 °C altijd Stil; eronder start Stil en schaalt op bij aanhoudend tekort; onder −9 °C minimaal Normaal.
+- Vermogensmodus: boven *Altijd Stil boven* (standaard 3 °C) altijd Stil; onder *Koud* (standaard 2 °C) minimaal Normaal en Boost bij aanhoudend tekort (instelbaar: *Bij kou minimaal Normaal* = 0 geeft het oude gedrag: start Stil, opschalen bij tekort).
 - Pomp T: als die draait op koud bronwater (< 18 °C) gaat de pomp AO aan met minimaal 30 °C aanvoer.
 - Tapwater: minimaal 45 °C, daarboven op prijs (< 0,20 → 60, < 0,26 → 55, < 0,30 → 50, anders 45, negatief → 70).
 
@@ -201,3 +201,11 @@ handmatige wijziging.
 Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meestal lucht), dan zijn debiet en warmte
 "onbekend" in plaats van 0, en telt de COP niet mee. *Circulatie pomp AO* volgt nu de pomprelais-bit van de SunRain
 (reg 25 bit 6) in plaats van het debiet. Duurt de meterfout langer dan 10 minuten, dan komt er een melding.
+
+## Nieuw in 3.5.5: bij kou gewoon Normaal, geen setpoint-dip na ontdooien
+- Onder de koud-grens (*Koud: Normaal/opschalen onder*, standaard 2 °C, hysterese tot *Altijd Stil boven*) draait de
+  unit minimaal **Normaal**. Voorheen begon hij Stil en schaalde pas na 10 min tekort op, en zakte bij een overshoot
+  na het ontdooien weer terug naar Stil: elke ~20 min wisselen. Uit te zetten met *Bij kou minimaal Normaal* = 0.
+- Na een herstart in de hysteresezone kiest de regeling op het midden van de twee grenzen in plaats van altijd "warm".
+- Valt de buitentemperatuur even weg (rond het ontdooien gaf de SunRain soms geen waarde), dan houdt de regeling de
+  laatste geldige waarde tot 2 uur vast. Voorheen rekende de stooklijn dan met 5 °C en zakte het aanvoersetpoint 2 K.

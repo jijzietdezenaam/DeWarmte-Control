@@ -56,6 +56,7 @@ class Settings:
     # vermogensmodus: boven silent_above altijd Stil; eronder zelf opschalen
     silent_above: float = 3.0
     silent_release: float = 2.0
+    normal_when_cold: float = 1.0          # 1 = onder silent_release minimaal Normaal (niet eerst Stil)
     normal_floor_below: float = -9.0
     shortfall_normal_k: float = 2.0
     shortfall_normal_min: float = 10.0
@@ -170,7 +171,7 @@ class Engine:
         self.last_hot: float | None = st.get("last_hot")
         self.demand = False
         self.season = True
-        self.cold = False
+        self.cold: bool | None = None          # None = nog niet bepaald (eerste meting beslist)
         self._idx = 0
         self._t: dict[str, float] = {}
         self._call_since: float | None = None
@@ -398,11 +399,14 @@ class Engine:
                 self.cold = False
             elif ta <= s.silent_release:
                 self.cold = True
+            elif self.cold is None:                 # na (her)start in de hysteresezone: kies op het midden
+                self.cold = ta <= (s.silent_release + s.silent_above) / 2
         if not self.cold:
             self._idx = 0
             self._t.clear()
             return SILENT, f"buiten boven {s.silent_above:g} °C: altijd Stil"
-        floor = 1 if (ta is not None and ta < s.normal_floor_below) else 0
+        normal_floor = bool(s.normal_when_cold) or (ta is not None and ta < s.normal_floor_below)
+        floor = 1 if normal_floor else 0
         hold_ok = self._mode_changed is None or now - self._mode_changed >= s.mode_hold_min * 60
         if self._idx < floor:
             self._idx, self._mode_changed = floor, now
@@ -420,7 +424,8 @@ class Engine:
         value = _VAL[self._idx]
         why = "koud: start Stil, schaalt op bij aanhoudend tekort" if self._idx == 0 else "opgeschaald wegens aanhoudend tekort"
         if floor and self._idx == floor:
-            why = f"onder {s.normal_floor_below:g} °C: minimaal Normaal"
+            why = (f"buiten onder {s.silent_release:g} °C: minimaal Normaal" if s.normal_when_cold
+                   else f"onder {s.normal_floor_below:g} °C: minimaal Normaal")
         return value, why
 
     def _dhw(self, inp: Inputs, now: float) -> dict:

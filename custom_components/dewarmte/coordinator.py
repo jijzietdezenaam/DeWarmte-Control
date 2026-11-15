@@ -620,6 +620,12 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 outdoor = _f(st.state)
         if outdoor is None:
             outdoor = v.get("t_ambient")
+        # Buitentemperatuur valt soms even weg (bijv. rond het ontdooien). Dan de laatste geldige waarde
+        # tot 2 uur aanhouden in plaats van de curve met 5 °C te laten rekenen (setpoint zakte dan 2 K).
+        if outdoor is not None:
+            self._last_outdoor = (outdoor, time.time())
+        elif getattr(self, "_last_outdoor", None) and time.time() - self._last_outdoor[1] < 7200:
+            outdoor = self._last_outdoor[0]
         price = level = None
         if self.cfg.get(CONF_PRICE):
             st = self.hass.states.get(self.cfg[CONF_PRICE])
