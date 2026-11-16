@@ -513,3 +513,12 @@ def test_vacation_fixes_dhw_and_ignores_usage_need():
     e = eng.Engine(eng.Settings())
     d = e.update(inp(0, outdoor=5.0, price=0.10, dhw_need=55.0, dhw_need_reason="tapmoment"))
     assert d["dhw_setpoint_advice"] >= 55.0
+
+def test_vacation_base_load_only_when_freezing():
+    r = rooms(0, 20.0, 17.0)                                   # alle kamers boven doel, kleppen dicht
+    e = eng.Engine(eng.Settings())
+    assert e.update(inp(0, outdoor=8.0, rooms=r))["base_load"] is True
+    e = eng.Engine(eng.Settings())
+    assert e.update(inp(0, outdoor=8.0, rooms=r, vacation=True))["base_load"] is False
+    e = eng.Engine(eng.Settings())
+    assert e.update(inp(0, outdoor=1.0, rooms=r, vacation=True))["base_load"] is True

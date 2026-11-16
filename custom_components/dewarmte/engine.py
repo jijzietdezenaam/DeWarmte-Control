@@ -91,6 +91,7 @@ class Settings:
     dhw_usage_temp: float = 50.0          # boiler boven minimaal op een geleerd tapmoment (0 = uit)
     legionella_auto_days: float = 7.0      # automatische desinfectie na zoveel dagen zonder ≥ 60 °C (0 = uit)
     vacation_dhw: float = 45.0             # tapwatersetpoint tijdens vakantiemodus (°C)
+    vacation_base_below: float = 3.0       # basislast tijdens vakantiemodus alleen onder deze buitentemperatuur (vorst)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
@@ -236,7 +237,7 @@ class Engine:
         # aanvoersetpoint
         ta_eff = ta if ta is not None else 5.0
         base = s.curve_start - s.curve_slope * ta_eff
-        base_load = self.season and ta_eff < s.keep_on_below
+        base_load = self.season and ta_eff < (s.vacation_base_below if inp.vacation else s.keep_on_below)
         want = (self.season and (self.demand or base_load)) or source_support
         self._trim_update(valves, worst, now, want and self.season)
         self._learn(now, want and self.season)

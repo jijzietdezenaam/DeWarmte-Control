@@ -53,6 +53,7 @@
           "normal_when_cold": "Bij kou minimaal Normaal (1 = aan, 0 = eerst Stil)",
           "dhw_floor": "Tapwater minimum (°C)",
           "vacation_dhw": "Vakantiemodus: tapwater (°C)",
+          "vacation_base_below": "Vakantiemodus: basislast alleen onder (°C buiten)",
           "dhw_max": "Tapwater maximum bij normale prijs (°C)",
           "dhw_max_negative": "Tapwater maximum bij negatieve prijs (°C)",
           "price_cheap": "Prijs goedkoop onder (EUR/kWh)",

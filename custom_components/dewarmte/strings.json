@@ -53,6 +53,7 @@
           "normal_when_cold": "When cold at least Normal (1 = on, 0 = start Silent)",
           "dhw_floor": "DHW minimum (°C)",
           "vacation_dhw": "Vacation mode: DHW (°C)",
+          "vacation_base_below": "Vacation mode: base load only below (°C outside)",
           "dhw_max": "DHW maximum at normal price (°C)",
           "dhw_max_negative": "DHW maximum at negative price (°C)",
           "price_cheap": "Cheap below (EUR/kWh)",

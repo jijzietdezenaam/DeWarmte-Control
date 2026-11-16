@@ -223,3 +223,4 @@ Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meest
 - Met een terugkomstmoment: *Vakantiemodus: zoveel uur vóór terugkomst opwarmen* (standaard 6 uur) ervoor regelt
   alles weer normaal, op het terugkomstmoment gaat de modus vanzelf uit (met melding).
 - De automatische legionella-desinfectie (elke 7 dagen) blijft gewoon doorlopen.
+- Basislast (hal/toilet/bijkeuken zonder TRV) draait tijdens vakantie alleen onder *Vakantiemodus: basislast alleen onder* (standaard 3 °C buiten, 3.5.9).

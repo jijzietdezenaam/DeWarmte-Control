@@ -1,6 +1,6 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.5.8"
+VERSION = "3.5.9"
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number", "datetime"]
 
 CONF_UP_TOPIC = "up_topic"
@@ -36,6 +36,7 @@ SETTING_FIELDS = {
     "normal_when_cold": (0, 1, 1, "Bij kou minimaal Normaal (1 = aan, 0 = eerst Stil)", "When cold at least Normal (1 = on, 0 = start Silent)"),
     "dhw_floor": (35, 60, 1, "Tapwater minimum (°C)", "DHW minimum (°C)"),
     "vacation_dhw": (35, 60, 1, "Vakantiemodus: tapwater (°C)", "Vacation mode: DHW (°C)"),
+    "vacation_base_below": (-10, 15, 0.5, "Vakantiemodus: basislast alleen onder (°C buiten)", "Vacation mode: base load only below (°C outside)"),
     "dhw_max": (45, 70, 1, "Tapwater maximum bij normale prijs (°C)", "DHW maximum at normal price (°C)"),
     "dhw_max_negative": (45, 70, 1, "Tapwater maximum bij negatieve prijs (°C)", "DHW maximum at negative price (°C)"),
     "price_cheap": (-0.5, 1, 0.01, "Prijs goedkoop onder (EUR/kWh)", "Cheap below (EUR/kWh)"),
