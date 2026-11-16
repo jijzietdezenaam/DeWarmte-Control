@@ -284,7 +284,7 @@ async def main():
     # ---- dashboard: elke verwijzing moet naar een echte entiteit wijzen
     ids = {("sensor", d.key) for d in sens.SENSORS + sens.EXTRA} | {("binary_sensor", d.key) for d in binm.BINARIES}
     ids |= {("sensor", x.key) for x in regs.RAW if not isinstance(x.bit, int)} | {("binary_sensor", x.key) for x in regs.RAW if isinstance(x.bit, int)}
-    ids |= {("switch", "control"), ("switch", "service_mode"), ("switch", "plan"), ("button", "report_now"), ("button", "disinfect_start"), ("button", "disinfect_stop"), ("button", "week_now"), ("button", "vent_start"), ("button", "vent_stop")}
+    ids |= {("switch", "control"), ("switch", "service_mode"), ("switch", "plan"), ("switch", "vacation"), ("datetime", "vacation_return"), ("button", "report_now"), ("button", "disinfect_start"), ("button", "disinfect_stop"), ("button", "week_now"), ("button", "vent_start"), ("button", "vent_stop")}
     ids |= {("number", f"n{k[0]}_{k[1]}") for k in load("writes").SERVICE}
     bad = []
     def resolve(platform, key):
