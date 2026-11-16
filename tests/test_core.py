@@ -505,3 +505,11 @@ def test_room_max_caps_bedrooms_and_overrides():
     p.wrote("climate.slaapkamer", 20.0, noon - 600)              # handmatig naar 19 (onder max) blijft gerespecteerd
     t4, why4 = p.room_target("climate.slaapkamer", presets, True, noon, 19.0)
     assert t4 is None and "handmatig" in why4
+
+def test_vacation_fixes_dhw_and_ignores_usage_need():
+    e = eng.Engine(eng.Settings())
+    d = e.update(inp(0, outdoor=5.0, price=0.10, dhw_need=55.0, dhw_need_reason="tapmoment", vacation=True))
+    assert d["dhw_setpoint_advice"] == 45.0 and d["dhw_reason"] == "vakantiemodus"
+    e = eng.Engine(eng.Settings())
+    d = e.update(inp(0, outdoor=5.0, price=0.10, dhw_need=55.0, dhw_need_reason="tapmoment"))
+    assert d["dhw_setpoint_advice"] >= 55.0

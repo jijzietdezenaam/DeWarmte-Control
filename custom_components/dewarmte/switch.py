@@ -10,7 +10,7 @@ from .sensor import main_device
 
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([ControlSwitch(c, entry), ServiceSwitch(c, entry), PlanSwitch(c, entry)])
+    async_add_entities([ControlSwitch(c, entry), ServiceSwitch(c, entry), PlanSwitch(c, entry), VacationSwitch(c, entry)])
 
 
 class ControlSwitch(CoordinatorEntity, SwitchEntity):
@@ -88,3 +88,40 @@ class PlanSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self.coordinator.async_set_plan(False)
+
+
+class VacationSwitch(CoordinatorEntity, SwitchEntity):
+    """Vakantiemodus: alle kamers naar het vakantiedoel, boiler op het vakantie-tapwatersetpoint.
+
+    Met 'Vakantie terug op' ingevuld begint het opwarmen zoveel uur vóór terugkomst en gaat de modus
+    op het terugkomstmoment vanzelf uit. De wekelijkse legionella-desinfectie blijft gewoon lopen.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Vakantiemodus"
+    _attr_icon = "mdi:bag-suitcase"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_vacation"
+        self._attr_device_info = main_device(entry)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.vacation_on
+
+    @property
+    def extra_state_attributes(self):
+        import time  # noqa: PLC0415
+        c = self.coordinator
+        start = c.vacation_preheat_from()
+        fmt = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else None  # noqa: E731
+        return {"verlaagd_nu": c.vacation_active(time.time()), "terug_op": fmt(c.vacation_return),
+                "opwarmen_vanaf": fmt(start), "kamerdoel": c.planner.s.vacation_room,
+                "tapwater": c.settings.vacation_dhw}
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.async_set_vacation(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.async_set_vacation(False)

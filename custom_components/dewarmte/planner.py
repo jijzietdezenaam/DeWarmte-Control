@@ -35,6 +35,8 @@ class PlanSettings:
     dhw_rank_max: float = 0.10      # goedkoopste 10 % van het komende etmaal: boiler naar maximum
     dhw_rank_mid: float = 0.25      # goedkoopste 25 %: boiler naar middenstand
     room_max: float = 20.0          # absoluut maximum kamerdoel voor de kamers in PricePlanner.capped
+    vacation_room: float = 17.0     # kamerdoel tijdens vakantiemodus
+    vacation_preheat_h: float = 6.0 # zoveel uur vóór terugkomst weer normaal regelen (huis + boiler opwarmen)
 
     @classmethod
     def from_dict(cls, d: dict) -> "PlanSettings":

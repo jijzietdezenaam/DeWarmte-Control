@@ -173,6 +173,19 @@ async def main():
     c._last_plan = 0; await c._async_update_data()
     assert h.states.d["climate.a"].attributes["temperature"] == 21.0          # handmatige wijziging gerespecteerd
     assert "handmatig" in c.plan_rooms["climate.a"]["reden"]
+    # vakantiemodus: alle kamers naar 17 °C (ook over handmatig heen), boiler 45 °C
+    await c.async_set_vacation(True)
+    c._last_plan = 0; dv = await c._async_update_data()
+    assert h.states.d["climate.a"].attributes["temperature"] == 17.0
+    assert h.states.d["climate.b"].attributes["temperature"] == 17.0
+    assert dv["d"]["dhw_setpoint_advice"] == 45.0 and c.plan_info()["vakantiemodus"]
+    await c.async_set_vacation_return(time.time() + 3 * 3600)            # binnen de opwarmtijd (6 u): weer normaal
+    c._last_plan = 0; await c._async_update_data()
+    assert not c.vacation_active(time.time()) and c.vacation_on
+    assert h.states.d["climate.a"].attributes["temperature"] > 17.0
+    await c.async_set_vacation_return(time.time() - 1)                   # terugkomstmoment voorbij: vanzelf uit
+    await c._async_update_data()
+    assert c.vacation_on is False and c.vacation_return is None
     # uurrapport
     assert timers and timers[0][1] == {"minute": 0, "second": 15}
     await timers[0][0]()

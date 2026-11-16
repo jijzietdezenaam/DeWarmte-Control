@@ -215,3 +215,11 @@ Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meest
   *Absoluut maximum kamerdoel* (standaard 20 °C). Prijsslim voorverwarmen en warme periodes gaan daar nooit
   boven; een handmatig hoger doel wordt ook teruggezet. Lager zetten blijft gewoon gerespecteerd.
 - Labels voor *Koud: Normaal/opschalen onder* en *Bij kou minimaal Normaal* toegevoegd aan de vertalingen.
+
+## Nieuw in 3.5.7: vakantiemodus
+- Schakelaar **Vakantiemodus** en datum/tijd **Vakantie terug op**.
+- Aan: alle kamers naar *Vakantiemodus: kamerdoel* (standaard 17 °C, ook over handmatige wijzigingen heen) en de
+  boiler vast op *Vakantiemodus: tapwater* (standaard 45 °C, geen prijsslim laden of tapmomenten).
+- Met een terugkomstmoment: *Vakantiemodus: zoveel uur vóór terugkomst opwarmen* (standaard 6 uur) ervoor regelt
+  alles weer normaal, op het terugkomstmoment gaat de modus vanzelf uit (met melding).
+- De automatische legionella-desinfectie (elke 7 dagen) blijft gewoon doorlopen.

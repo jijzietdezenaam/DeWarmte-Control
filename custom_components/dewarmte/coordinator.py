@@ -74,6 +74,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), None, self.cfg.get(CONF_SCHEDULES),
                                     self._capped_rooms())
         self.plan_enabled = True
+        self.vacation_on = False             # vakantiemodus (handmatig)
+        self.vacation_return: float | None = None   # epoch terugkomst; None = tot handmatig uit
         self._last_plan = 0.0
         self._last_price_fetch = 0.0
         self._price_error: str | None = None
@@ -94,6 +96,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.engine = Engine(self.settings, stored)
         self.control_enabled = bool(stored.get("control_enabled", True))
         self.plan_enabled = bool(stored.get("plan_enabled", True))
+        self.vacation_on = bool(stored.get("vacation_on", False))
+        self.vacation_return = stored.get("vacation_return")
         self.planner = PricePlanner(PlanSettings.from_dict(self.cfg), stored.get("planner"), self.cfg.get(CONF_SCHEDULES),
                                     self._capped_rooms())
         self.cycles = CycleCounter(stored.get("cycles"))
@@ -163,6 +167,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
     def _state(self) -> dict:
         return {**self.engine.export_state(), "control_enabled": self.control_enabled,
                 "plan_enabled": self.plan_enabled, "planner": self.planner.export_state(),
+                "vacation_on": self.vacation_on, "vacation_return": self.vacation_return,
                 "cycles": self.cycles.export_state(), "dhw": self.dhw.export_state(),
                 "week": self.week.export_state(), "last_week": self.last_week}
 
@@ -654,7 +659,39 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             price=price, price_level=level, critical_ok=bool(status.get(1, {}).get("ok")),
             price_rank=self.planner.rank_now(time.time()) if self.plan_enabled else None,
             plan_offset=self.planner.offset if self._plan_active() else None,
-            dhw_need=need, dhw_need_reason=need_reason)
+            dhw_need=need, dhw_need_reason=need_reason, vacation=self.vacation_active(time.time()))
+
+    # ------------------------------------------------------------ vakantiemodus
+    def vacation_preheat_from(self) -> float | None:
+        if not self.vacation_return:
+            return None
+        return self.vacation_return - self.planner.s.vacation_preheat_h * 3600
+
+    def vacation_active(self, now: float) -> bool:
+        """Vakantiemodus aan en nog niet in de opwarmperiode vóór terugkomst."""
+        start = self.vacation_preheat_from()
+        return self.vacation_on and (start is None or now < start)
+
+    async def async_set_vacation(self, on: bool, reason: str = "handmatig") -> None:
+        self.vacation_on = on
+        if not on:
+            self.vacation_return = None if reason == "handmatig" else self.vacation_return
+        await self._store.async_save(self._state())
+        _LOGGER.warning("Vakantiemodus %s (%s)", "AAN" if on else "UIT", reason)
+        self.async_update_listeners()
+
+    async def async_set_vacation_return(self, when: float | None) -> None:
+        self.vacation_return = when
+        await self._store.async_save(self._state())
+        self.async_update_listeners()
+
+    async def _vacation_step(self) -> None:
+        if self.vacation_on and self.vacation_return and time.time() >= self.vacation_return:
+            self.vacation_on = False
+            self.vacation_return = None
+            await self._store.async_save(self._state())
+            await self._notify_both("DeWarmte: welkom thuis",
+                                    "Vakantiemodus is automatisch uitgezet; huis en boiler regelen weer normaal.")
 
     # ------------------------------------------------------------ prijsplanner
     def _plan_active(self) -> bool:
@@ -715,6 +752,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         p = self.planner
         p.update_offset(now)
         home = self._home()
+        vac = self.vacation_active(now)
         rooms: dict[str, dict] = {}
         for ent in self.cfg.get(CONF_ROOMS, []):
             st = self.hass.states.get(ent)
@@ -732,10 +770,14 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             last = p.last_written.get(ent)
             if last and current is not None and abs(current - last[0]) <= 0.05:
                 p.override_until.pop(ent, None)          # weer terug op ons doel (bijv. na raam dicht)
-            target, why = p.room_target(ent, a.get("preset_temperatures") or {}, home, now, current)
+            if vac:
+                target, why = p.s.vacation_room, "vakantiemodus"
+            else:
+                target, why = p.room_target(ent, a.get("preset_temperatures") or {}, home, now, current)
             rooms[ent] = {"doel": target, "nu": current, "reden": why,
                           "afkoeling_k_per_uur": p.cool_rate.get(ent)}
-            if target is None or not self._plan_active() or current is None or abs(target - current) < 0.25:
+            writable = self.control_enabled if vac else self._plan_active()
+            if target is None or not writable or current is None or abs(target - current) < 0.25:
                 if target is not None and current is not None and abs(target - current) < 0.25 and not last:
                     p.wrote(ent, current, now)
                 continue
@@ -757,7 +799,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
     def plan_info(self) -> dict:
         p = self.planner
         now = time.time()
-        return {"actief": self._plan_active(), "reden": p.reason, "blok": p.block(now), "thuis": self._home(),
+        return {"actief": self._plan_active(), "vakantiemodus": self.vacation_active(now), "reden": p.reason, "blok": p.block(now), "thuis": self._home(),
                 "venster_uur": round(p.window_h, 1), "prijsrang_nu": p.rank_now(now),
                 "prijs_nu": p.price_now(now), "fout": self._price_error, "kamers": self.plan_rooms,
                 "afkoelsnelheid": p.cool_rate, "planning": p.plan(now)}
@@ -767,6 +809,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         await self._poll()
         values = R.decode_all(self._raw, time.monotonic())
         status = self._status()
+        await self._vacation_step()
         await self._plan_step()
         decision = self.engine.update(self._inputs(values, status))
         await self._execute(decision)

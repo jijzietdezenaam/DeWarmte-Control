@@ -90,6 +90,7 @@ class Settings:
     legionella_warn_days: float = 14.0
     dhw_usage_temp: float = 50.0          # boiler boven minimaal op een geleerd tapmoment (0 = uit)
     legionella_auto_days: float = 7.0      # automatische desinfectie na zoveel dagen zonder ≥ 60 °C (0 = uit)
+    vacation_dhw: float = 45.0             # tapwatersetpoint tijdens vakantiemodus (°C)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
@@ -146,6 +147,7 @@ class Inputs:
     plan_offset: float | None = None        # prijs-offset van de kamerdoelen (planner)
     dhw_need: float | None = None          # minimaal tapwatersetpoint voor een geleerd tapmoment
     dhw_need_reason: str = ""
+    vacation: bool = False                  # vakantiemodus actief: vast tapwatersetpoint, geen tapmomenten
     critical_ok: bool = False
 
 
@@ -460,7 +462,9 @@ class Engine:
             want = min(want, s.dhw_max)
         want = max(want, s.dhw_floor)
         urgent = price is not None and price < 0
-        if inp.dhw_need is not None and inp.dhw_need > want:
+        if inp.vacation:
+            want, reason, urgent = s.vacation_dhw, "vakantiemodus", False
+        elif inp.dhw_need is not None and inp.dhw_need > want:
             want, reason, urgent = inp.dhw_need, inp.dhw_need_reason or "tapmoment", True
         old = self._dhw_target
         if old is None or urgent or abs(want - old) >= 5 or (

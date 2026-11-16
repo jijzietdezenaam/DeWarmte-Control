@@ -1,7 +1,7 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.5.6"
-PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number"]
+VERSION = "3.5.7"
+PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number", "datetime"]
 
 CONF_UP_TOPIC = "up_topic"
 CONF_DOWN_TOPIC = "down_topic"
@@ -35,6 +35,7 @@ SETTING_FIELDS = {
     "silent_release": (-5, 10, 0.5, "Koud: Normaal/opschalen onder (°C buiten)", "Cold: Normal/scaling below (°C outside)"),
     "normal_when_cold": (0, 1, 1, "Bij kou minimaal Normaal (1 = aan, 0 = eerst Stil)", "When cold at least Normal (1 = on, 0 = start Silent)"),
     "dhw_floor": (35, 60, 1, "Tapwater minimum (°C)", "DHW minimum (°C)"),
+    "vacation_dhw": (35, 60, 1, "Vakantiemodus: tapwater (°C)", "Vacation mode: DHW (°C)"),
     "dhw_max": (45, 70, 1, "Tapwater maximum bij normale prijs (°C)", "DHW maximum at normal price (°C)"),
     "dhw_max_negative": (45, 70, 1, "Tapwater maximum bij negatieve prijs (°C)", "DHW maximum at negative price (°C)"),
     "price_cheap": (-0.5, 1, 0.01, "Prijs goedkoop onder (EUR/kWh)", "Cheap below (EUR/kWh)"),
@@ -51,6 +52,8 @@ PLAN_FIELDS = {
     "gain": (0.5, 6, 0.5, "Prijsslim: gevoeligheid voor prijsverschil", "Price: sensitivity to price difference"),
     "hold_min": (15, 180, 15, "Prijsslim: minimale duur van een kamerdoel (min)", "Price: minimum hold of a room target (min)"),
     "room_max": (15, 25, 0.5, "Absoluut maximum kamerdoel voor gekozen kamers (°C)", "Absolute maximum room target for selected rooms (°C)"),
+    "vacation_room": (10, 20, 0.5, "Vakantiemodus: kamerdoel (°C)", "Vacation mode: room target (°C)"),
+    "vacation_preheat_h": (0, 24, 1, "Vakantiemodus: zoveel uur vóór terugkomst opwarmen", "Vacation mode: preheat hours before return"),
 }
 PLAN_TIMES = {"night_start": "Nachtverlaging vanaf (uu:mm)", "morning_weekday": "Ochtend werkdag vanaf (uu:mm)",
               "morning_weekend": "Ochtend weekend vanaf (uu:mm)"}
