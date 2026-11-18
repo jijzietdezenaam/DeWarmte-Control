@@ -94,6 +94,8 @@ class WriteGuard:
         lo, hi = ALLOWED[key]
         if not lo <= value <= hi:
             return f"waarde {value} buiten {lo}..{hi}"
+        if key == (1, 773) and value == 0:
+            return None             # uitzetten is altijd veilig: alleen starts tellen mee voor het budget
         self._prune(now)
         b, q = BUDGETS[key], self._log[key]
         if q and now - q[-1] < b.min_gap_min * 60:
@@ -108,10 +110,11 @@ class WriteGuard:
             return "totaal dagbudget op"
         return None
 
-    def record(self, slave: int, reg: int, now: float, ok: bool) -> None:
-        """Ook mislukte pogingen tellen mee voor het budget."""
-        self._log[(slave, reg)].append(now)
-        self._all.append(now)
+    def record(self, slave: int, reg: int, now: float, ok: bool, value: int | None = None) -> None:
+        """Ook mislukte pogingen tellen mee voor het budget; uitzetten (773 = 0) niet."""
+        if not ((slave, reg) == (1, 773) and value == 0):
+            self._log[(slave, reg)].append(now)
+            self._all.append(now)
         self.failures = 0 if ok else self.failures + 1
 
     @property

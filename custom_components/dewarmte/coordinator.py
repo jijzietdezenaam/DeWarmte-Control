@@ -208,7 +208,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                         st["next"] = 0.0
             except ModbusError as err:
                 item["error"] = str(err)
-            self.guard.record(slave, reg, now, item["ok"])
+            self.guard.record(slave, reg, now, item["ok"], value)
             self.report.action(item)
             self.actions = (self.actions + [item])[-30:]
             _LOGGER.info("Schrijfactie %s %s → %s: %s", item["name"], item["old"], item["new"],
@@ -262,7 +262,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         except ModbusError as err:
             item["error"] = str(err)
         if not service:
-            self.guard.record(slave, reg, time.monotonic(), item["ok"])
+            self.guard.record(slave, reg, time.monotonic(), item["ok"], value)
         self.report.action(item)
         self.actions = (self.actions + [item])[-30:]
         _LOGGER.info("%s %s: %s → %s: %s", "Service" if service else "Schrijfactie", name, old, new,

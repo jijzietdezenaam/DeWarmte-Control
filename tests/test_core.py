@@ -276,6 +276,15 @@ def test_write_budget():
     for _ in range(3): g.record(2, 6, 99999, False)
     assert g.tripped
 
+def test_unit_off_never_blocked_by_budget():
+    g = wr.WriteGuard()
+    t = 0
+    for _ in range(12):                                  # dagbudget starts op
+        assert g.check(1, 773, 1, t) is None; g.record(1, 773, t, True, 1); t += 1800
+        assert g.check(1, 773, 0, t) is None; g.record(1, 773, t, True, 0); t += 1800
+    assert "dagbudget" in g.check(1, 773, 1, t)          # aanzetten geblokkeerd
+    assert g.check(1, 773, 0, t) is None                 # uitzetten mag altijd
+
 def test_hour_report_text():
     rp = load("report").HourReport()
     v = {"t_supply": 30, "compressor_running": True, "power_mode": 2, "ao_pm_energy": 100.0, "ao_hm_energy": 400.0, "dhw_top": 50, "pt_set": 50}

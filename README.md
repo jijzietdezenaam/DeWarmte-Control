@@ -224,3 +224,8 @@ Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meest
   alles weer normaal, op het terugkomstmoment gaat de modus vanzelf uit (met melding).
 - De automatische legionella-desinfectie (elke 7 dagen) blijft gewoon doorlopen.
 - Basislast (hal/toilet/bijkeuken zonder TRV) draait tijdens vakantie alleen onder *Vakantiemodus: basislast alleen onder* (standaard 3 °C buiten, 3.5.9).
+
+## Nieuw in 3.5.10: uitzetten altijd toegestaan
+- De schrijfbeveiliging telde ook het *uitzetten* van de unit mee voor het aan/uit-budget (12 per 24 uur). Was dat op,
+  dan bleef de unit draaien zonder warmtevraag. Uitzetten is altijd veilig en telt nu niet meer mee; alleen starts
+  zijn begrensd (plus de bestaande minimale loop- en stilstandtijd).
