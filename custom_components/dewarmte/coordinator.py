@@ -92,7 +92,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self._unsub_week = None
         self._saved_t = 0.0
         self.room_cfgs = parse_room_config(self.cfg.get(CONF_ROOM_CFG))
-        self.rooms_ctl = RoomController(self.room_cfgs)
+        self.rooms_ctl = RoomController(self.room_cfgs, no_window=set(self.cfg.get(CONF_TRV_ROOMS) or []))
         self.room_control = False            # zelflerende kamerregeling (vervangt VTherm) aan/uit
         self.room_info: dict[str, dict] = {}
         self._room_inputs: dict[str, Room] = {}
@@ -118,7 +118,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.dhw = DhwLearner(DhwSettings(usage_temp=self.settings.dhw_usage_temp or 50.0), stored.get("dhw"))
         self.week = WeekStats(stored.get("week"))
         self.last_week = stored.get("last_week") or self.last_week
-        self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"))
+        self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"), no_window=set(self.cfg.get(CONF_TRV_ROOMS) or []))
         self.room_control = bool(stored.get("room_control", False)) and bool(self.room_cfgs)
         self._unsub = await mqtt.async_subscribe(
             self.hass, self.cfg[CONF_UP_TOPIC], self._on_message, 0, encoding=None)
@@ -1007,7 +1007,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 rs.u, rs.trv_ok = (None if valve is None else valve / 100), True
             else:
                 if rs.u is None and opening is not None and closing is not None and abs(opening + closing - 100) <= 1:
-                    rs.u, rs.u_t = opening / 100, now - 600          # bestaande stand overnemen
+                    rs.u, rs.u_t = opening / 100, now - 3600         # bestaande stand overnemen, meteen bijsturen mag
                 if rs.u is not None and opening is not None and now - rs.u_t > 180:
                     rs.trv_ok = abs(opening - rs.u * 100) <= 1.5
             ctl.observe(key, now, tr, to, ts_meas if flowing else ts_ctrl, flowing)

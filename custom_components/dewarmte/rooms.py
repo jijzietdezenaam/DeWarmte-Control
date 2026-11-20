@@ -129,13 +129,21 @@ class RoomModel:
         if x[0] > 1.0:
             self.n += 1
 
+    def eff(self) -> list[float]:
+        """Waarden om mee te regelen: standaardwaarden, naarmate er meer geleerd is geleidelijk de geleerde.
+        Zo kan één vreemde meting in het begin de regeling niet van slag brengen."""
+        c = self.confidence
+        return [p + c * (t - p) for p, t in zip(PRIOR, self.theta)]
+
     def capacity(self, fan: float, ts: float, tr: float) -> float:
         """Afgifte (K/u) bij een volledig open klep."""
-        return (self.a + self.af * fan) * max(0.0, ts - tr)
+        a, af, _, _ = self.eff()
+        return (a + af * fan) * max(0.0, ts - tr)
 
     def steady_need(self, target: float, to: float) -> float:
         """Benodigde afgifte (K/u) om het doel vast te houden."""
-        return max(0.0, self.b * (target - to) - self.d)
+        _, _, b, d = self.eff()
+        return max(0.0, b * (target - to) - d)
 
 
 @dataclass
@@ -160,16 +168,17 @@ class RoomState:
 @dataclass
 class RoomSettings:
     u_design: float = 0.85         # aanvoer zo kiezen dat de moeilijkste kamer hier uitkomt
-    kp: float = 1.0                # K/u extra afgifte per K tekort
-    ki: float = 0.10               # klepfractie per K·uur
+    kp: float = 2.0                # K/u extra afgifte per K tekort
+    ki: float = 0.30               # klepfractie per K·uur
+    full_open_k: float = 0.8       # zoveel te koud: klep volledig open
     i_max: float = 0.30
     min_open: float = 0.10         # kleiner dan dit: dicht (voorkomt druppelen en pendelen)
     write_step: float = 0.10       # pas schrijven bij ≥ 10 % verschil (spaart TRV-batterijen)
-    write_min_s: float = 600.0     # klep max. 1x per 10 min wijzigen
+    write_min_s: float = 900.0     # klep max. 1x per 15 min wijzigen (behalve dicht/open bij te warm/te koud)
     fan_min: float = 0.20
     fan_max: float = 0.50
     fan_min_s: float = 300.0
-    window_drop_k: float = 0.5     # 0,5 K in 10 min = 3 K/u
+    window_drop_k: float = 0.8     # ≥ 0,8 K daling binnen 15 min (sensoren melden in stapjes, dus niet te gevoelig)
     window_s: float = 1800.0
     overheat_k: float = 0.5
     frost: float = 7.0
@@ -178,8 +187,12 @@ class RoomSettings:
 
 
 class RoomController:
-    def __init__(self, rooms: list[RoomCfg], state: dict | None = None, settings: RoomSettings | None = None) -> None:
+    def __init__(self, rooms: list[RoomCfg], state: dict | None = None, settings: RoomSettings | None = None,
+                 no_window: set[str] | None = None) -> None:
         self.s = settings or RoomSettings()
+        # kamers die met de sensor in de TRV meten: die sensor koelt snel af als de klep dichtgaat,
+        # dat lijkt op een open raam. Daar geen raamdetectie.
+        self.no_window = set(no_window or ())
         self.rooms = {r.key: r for r in rooms}
         st = state or {}
         models = st.get("models") or {}
@@ -206,8 +219,9 @@ class RoomController:
         while rs.hist and wall - rs.hist[0][0] > 900:
             rs.hist.popleft()
         # raam open: snelle daling
-        old = [t for w, t in rs.hist if wall - w <= 600]
-        if old and max(old) - tr >= self.s.window_drop_k and wall >= rs.window_until:
+        old = [t for w, t in rs.hist if wall - w <= 900]
+        if (key not in self.no_window and old and max(old) - tr >= self.s.window_drop_k
+                and wall >= rs.window_until):
             rs.window_until = wall + self.s.window_s
             rs.samples.clear()
         if wall - rs.last_sample < 300:
@@ -267,8 +281,8 @@ class RoomController:
             u = _clip(u, 0.0, 1.0)
             why = (f"nodig {max(0.0, need):.2f} K/u, max {cap:.2f} K/u bij {ts_:.0f} °C"
                    f" → {u:.0%} (I {rs.integ:+.0%})")
-            if err >= 1.0:
-                u, force, why = 1.0, True, f"{err:.1f} K te koud: klep open"
+            if target - tr >= s.full_open_k:
+                u, force, why = 1.0, True, f"{target - tr:.1f} K te koud: klep open"
             if u < s.min_open:
                 u = 0.0
         u = round(u * 20) / 20                                          # stappen van 5 %
@@ -311,7 +325,8 @@ class RoomController:
                 continue
             fan = s.fan_max if cfg.fan else 0.0
             need = m.steady_need(target, to)
-            per_k = (m.a + m.af * fan) * s.u_design
+            a, af, _, _ = m.eff()
+            per_k = (a + af * fan) * s.u_design
             ts = target + need / per_k if per_k > 0 else curve
             tr = temps.get(key)
             if tr is not None and tr < target - 0.3:                   # achterstand: iets ruimer

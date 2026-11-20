@@ -273,3 +273,13 @@ verwijderen van VTherm kan de DeWarmte-thermostaat dat entity-id overnemen.
 ## Nieuw in 3.6.2
 - Herstel: 3.6.1 startte niet (achtergrondtaak verkeerd aangemaakt). Een fout in de kamerregeling
   kan de warmtepompregeling nu nooit meer stoppen.
+
+## Nieuw in 3.6.3: kordater bijsturen
+- Te koud (≥ 0,8 K): klep meteen volledig open. Kleinere tekorten worden sterker bijgestuurd
+  (P 2,0 K/u per K, I 0,3 per K·uur).
+- De regeling gebruikt standaardwaarden zolang er weinig geleerd is, en schuift pas mee naar de
+  geleerde waarden naarmate er meer metingen zijn. Eén vreemde meting kan de kleppen niet meer laten dichtknijpen.
+- Geen raamdetectie in kamers die met de TRV-sensor meten (die sensor koelt na het dichtgaan van de
+  klep snel af). Elders: ≥ 0,8 K daling binnen 15 min.
+- Klep max. 1× per 15 min wijzigen, behalve volledig dicht (te warm, raam, uit) of open (te koud).
+- Bij overname van een klep mag DeWarmte direct bijsturen.
