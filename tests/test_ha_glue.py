@@ -325,12 +325,12 @@ async def main():
     assert fo + fc == 100 and fo < 100, (fo, fc, c.room_info["climate.b"])
     assert ("climate", "set_hvac_mode", {"entity_id": "climate.trv_f", "hvac_mode": "heat"}) in Hass.services.calls
     assert h.states.d["fan.jaga"].state == "on" and 20 <= h.states.d["fan.jaga"].attributes["percentage"] <= 50, calls
-    assert ents[0].available and ents[0].current_temperature == 19.6 and ents[0].hvac_action == "heating"
+    assert ents[0].available and ents[0].native_current_temperature == 19.6 and ents[0].hvac_action == "heating"
     assert ents[0].extra_state_attributes["valve_open_percent"] == wo
     assert c._room("climate.woonkamer").valve == wo
     # handmatig: doel tot het volgende blok, max. 3 uur
     await ents[1].async_set_temperature(temperature=21.0)
-    assert ents[1].preset_mode == "handmatig" and ents[1].target_temperature == 20.0   # slaapkamer-maximum 20
+    assert ents[1].preset_mode == "handmatig" and ents[1].native_target_temperature == 20.0   # slaapkamer-maximum 20
     await ents[1].async_set_preset_mode("schema"); assert ents[1].preset_mode == "schema"
     await ents[1].async_set_hvac_mode("off")
     assert h.states.d["number.f_open"].state == "0" and ents[1].hvac_action == "off"

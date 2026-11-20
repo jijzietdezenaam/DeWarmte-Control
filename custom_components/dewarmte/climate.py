@@ -24,7 +24,7 @@ def _slug(key: str) -> str:
 class RoomThermostat(CoordinatorEntity, ClimateEntity):
     _attr_has_entity_name = True
     _attr_icon = "mdi:home-thermometer"
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_preset_modes = [PRESET_AUTO, PRESET_MANUAL]
     _attr_supported_features = (ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
@@ -50,11 +50,11 @@ class RoomThermostat(CoordinatorEntity, ClimateEntity):
         return self.coordinator.room_control
 
     @property
-    def current_temperature(self):
+    def native_current_temperature(self):
         return self._i.get("current")
 
     @property
-    def target_temperature(self):
+    def native_target_temperature(self):
         return self._i.get("target")
 
     @property
