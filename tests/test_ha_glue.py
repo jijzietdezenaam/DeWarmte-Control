@@ -105,7 +105,9 @@ class States:
     def get(s, e): return s.d.get(e)
 class Hass:
     dead = set()
-    def async_create_task(s, coro, name=None): return asyncio.ensure_future(coro)
+    def async_create_task(s, coro, name=None):
+        assert asyncio.iscoroutine(coro), coro            # zoals HA: alleen coroutines
+        return asyncio.ensure_future(coro)
     states = States(); config = types.SimpleNamespace(path=lambda p: "/tmp/dw_obs_test")
     def async_add_executor_job(s, f, *a):
         fut = asyncio.get_running_loop().create_future(); fut.set_result(f(*a)); return fut

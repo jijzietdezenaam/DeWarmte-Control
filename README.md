@@ -269,3 +269,7 @@ verwijderen van VTherm kan de DeWarmte-thermostaat dat entity-id overnemen.
 - TRV- en fan-opdrachten lopen op de achtergrond, met maximaal 30 s per opdracht. Een TRV die niet
   antwoordt, houdt de warmtepompregeling niet meer op.
 - Thermostaten gebruiken de nieuwe `native_*`-temperatuureigenschappen (HA 2026.11).
+
+## Nieuw in 3.6.2
+- Herstel: 3.6.1 startte niet (achtergrondtaak verkeerd aangemaakt). Een fout in de kamerregeling
+  kan de warmtepompregeling nu nooit meer stoppen.

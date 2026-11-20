@@ -900,6 +900,12 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         await self._room_step(self._last_values)
         self.async_update_listeners()
 
+    async def _room_io_all(self, jobs: list[tuple], now: float) -> None:
+        results = await asyncio.gather(*(self._room_io(*j, now) for j in jobs), return_exceptions=True)
+        for res in results:
+            if isinstance(res, Exception):
+                _LOGGER.warning("Kamerregeling: aansturen mislukt: %r", res)
+
     async def _room_io(self, cfg, dec: dict, write: bool, old_pct, fan_write: bool, target, trv,
                        now: float) -> None:
         key = cfg.key
@@ -1036,8 +1042,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         if jobs and (self._room_task is None or self._room_task.done()):
             # TRV's/fans op de achtergrond aansturen: een Zigbee-TRV die niet antwoordt mag de
             # warmtepompregeling niet ophouden (ZHA wacht soms tientallen seconden per poging).
-            self._room_task = self.hass.async_create_task(
-                asyncio.gather(*(self._room_io(*j, now) for j in jobs)), "dewarmte_kamers")
+            self._room_task = self.hass.async_create_task(self._room_io_all(jobs, now), "dewarmte_kamers")
         need = ctl.supply_need(targets, to, curve, temps, now)
         if active and need["supply"] is not None:
             # traag volgen (tijdconstante 30 min), zodat de aanvoer niet springt
@@ -1064,7 +1069,10 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         status = self._status()
         await self._vacation_step()
         await self._plan_step()
-        await self._room_step(values)
+        try:
+            await self._room_step(values)
+        except Exception:  # noqa: BLE001 - de kamerregeling mag de warmtepompregeling nooit stoppen
+            _LOGGER.exception("Kamerregeling: fout in stap (warmtepompregeling gaat door)")
         decision = self.engine.update(self._inputs(values, status))
         await self._execute(decision)
         await self._disinfect_step(values)
