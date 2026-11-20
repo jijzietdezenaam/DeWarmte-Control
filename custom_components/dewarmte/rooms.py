@@ -1,0 +1,326 @@
+"""Zelflerende kamerregeling (puur Python, geen Home Assistant-imports).
+
+Per kamer leert DeWarmte een eenvoudig warmtemodel:
+
+    dT/dt [K/u] = (a + af·fan) · klep · (T_aanvoer − T_kamer) · circulatie − b · (T_kamer − T_buiten) + d
+
+a  = afgifte per K aanvoeroverschot bij een volledig open klep
+af = extra afgifte door de radiatorfans (per fractie fan, alleen kamers met fans)
+b  = warmteverlies naar buiten
+d  = vaste warmtewinst (zon, mensen, apparaten, buurkamers)
+
+Het model wordt met recursieve kleinste kwadraten (RLS) bijgewerkt. Begint met voorzichtige
+standaardwaarden; hoe meer metingen, hoe meer het geleerde model meetelt.
+
+Daarmee kiest de regeling:
+  * per kamer de klepstand die nodig is om het kamerdoel te halen (plus PI-correctie);
+  * voor de woonkamer de fan-stand (20-50 %);
+  * de laagste aanvoertemperatuur waarbij de 'moeilijkste' kamer zijn doel haalt met de klep op ~85 %.
+"""
+from __future__ import annotations
+
+import math
+from collections import deque
+from dataclasses import dataclass, field
+
+PRIOR = [0.10, 0.10, 0.05, 0.0]          # a, af, b, d
+PRIOR_VAR = [0.05 ** 2, 0.10 ** 2, 0.03 ** 2, 0.3 ** 2]
+NOISE_VAR = 0.2 ** 2                      # meetruis dT/dt (K/u), 0,1 K-sensor over 30 min
+BOUNDS = [(0.01, 0.6), (0.0, 0.6), (0.005, 0.3), (-1.5, 1.5)]
+LAMBDA = 0.997                           # vergeetfactor per update (elke 10 min: geheugen ~2 dagen)
+
+
+@dataclass
+class RoomCfg:
+    key: str                 # kamer-id, bijv. climate.woonkamer_2 (wordt ook het entity-id na overstap)
+    name: str
+    sensor: str              # kamertemperatuursensor
+    trv: str                 # climate-entiteit van de TRV
+    opening: str             # number ..._valve_opening_degree
+    closing: str             # number ..._valve_closing_degree
+    day: float
+    night: float
+    fan: str | None = None   # optioneel: fan-entiteit (radiatorventilatoren)
+
+
+def parse_room_config(text: str | None) -> list[RoomCfg]:
+    """Eén regel per kamer:
+    `climate.woonkamer_2 | Woonkamer | sensor.temp | climate.trv | number.open | number.dicht | 20,5 | 19 | fan.jaga`
+    """
+    out: list[RoomCfg] = []
+    for line in (text or "").replace(";", "\n").splitlines():
+        p = [x.strip() for x in line.split("|")]
+        if len(p) < 8 or not p[0].startswith("climate."):
+            continue
+        try:
+            day, night = float(p[6].replace(",", ".")), float(p[7].replace(",", "."))
+        except ValueError:
+            continue
+        out.append(RoomCfg(p[0], p[1] or p[0], p[2], p[3], p[4], p[5], day, night,
+                           p[8] if len(p) > 8 and p[8].startswith("fan.") else None))
+    return out
+
+
+def _clip(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
+class RoomModel:
+    """RLS-schatting van [a, af, b, d]."""
+
+    def __init__(self, state: dict | None = None) -> None:
+        st = state or {}
+        self.theta: list[float] = list(st.get("theta") or PRIOR)
+        P = st.get("P")
+        self.P: list[list[float]] = [list(r) for r in P] if P else [
+            [PRIOR_VAR[i] / NOISE_VAR if i == j else 0.0 for j in range(4)] for i in range(4)]
+        self.n: int = int(st.get("n", 0))           # updates met warmteafgifte (klep open + circulatie)
+        self.n_all: int = int(st.get("n_all", 0))
+        self.err: float | None = st.get("err")       # gemiddelde absolute voorspelfout (K/u)
+
+    def export(self) -> dict:
+        return {"theta": [round(x, 5) for x in self.theta], "P": [[round(x, 7) for x in r] for r in self.P],
+                "n": self.n, "n_all": self.n_all, "err": None if self.err is None else round(self.err, 3)}
+
+    @property
+    def a(self) -> float: return self.theta[0]
+    @property
+    def af(self) -> float: return self.theta[1]
+    @property
+    def b(self) -> float: return self.theta[2]
+    @property
+    def d(self) -> float: return self.theta[3]
+
+    @property
+    def confidence(self) -> float:
+        """0 = alleen standaardwaarden, 1 = ruim 12 uur aan metingen met warmteafgifte."""
+        return _clip(self.n / 72, 0.0, 1.0)
+
+    @staticmethod
+    def features(u: float, fan: float, ts: float, tr: float, to: float, flowing: float) -> list[float]:
+        dt = max(0.0, ts - tr) * flowing
+        return [u * dt, u * fan * dt, -(tr - to), 1.0]
+
+    def rate(self, x: list[float]) -> float:
+        return sum(t * xi for t, xi in zip(self.theta, x))
+
+    def update(self, x: list[float], y: float, has_fan: bool) -> None:
+        if not has_fan:
+            x = [x[0], 0.0, x[2], x[3]]
+        err = y - self.rate(x)
+        self.err = abs(err) if self.err is None else self.err + 0.05 * (abs(err) - self.err)
+        if abs(err) > 3.0:                        # uitschieter (raam, douche, zon op sensor): niet leren
+            return
+        P = self.P
+        Px = [sum(P[i][j] * x[j] for j in range(4)) for i in range(4)]
+        den = LAMBDA + sum(x[i] * Px[i] for i in range(4))
+        k = [v / den for v in Px]
+        self.theta = [_clip(self.theta[i] + k[i] * err, *BOUNDS[i]) for i in range(4)]
+        new = [[(P[i][j] - k[i] * Px[j]) / LAMBDA for j in range(4)] for i in range(4)]
+        for i in range(4):                       # geen opblazen bij weinig variatie (windup)
+            cap = PRIOR_VAR[i] / NOISE_VAR
+            if new[i][i] > cap:
+                s = math.sqrt(cap / new[i][i])
+                for j in range(4):
+                    new[i][j] *= s
+                    new[j][i] *= s
+        self.P = new
+        self.n_all += 1
+        if x[0] > 1.0:
+            self.n += 1
+
+    def capacity(self, fan: float, ts: float, tr: float) -> float:
+        """Afgifte (K/u) bij een volledig open klep."""
+        return (self.a + self.af * fan) * max(0.0, ts - tr)
+
+    def steady_need(self, target: float, to: float) -> float:
+        """Benodigde afgifte (K/u) om het doel vast te houden."""
+        return max(0.0, self.b * (target - to) - self.d)
+
+
+@dataclass
+class RoomState:
+    u: float | None = None                   # gecommandeerde klep 0..1 (laatst geschreven)
+    u_t: float = 0.0                         # wall van laatste klepwrite
+    u_want: float | None = None              # gewenste klep (voor dashboard)
+    fan: float = 0.0                         # gecommandeerde fan 0..1
+    fan_t: float = 0.0
+    integ: float = 0.0                       # I-term (fractie klep)
+    window_until: float = 0.0
+    hist: deque = field(default_factory=lambda: deque(maxlen=12))       # (wall, tr) laatste ~15 min
+    samples: deque = field(default_factory=lambda: deque(maxlen=12))    # (wall, tr, u, fan, ts, to, flow) per 5 min
+    last_sample: float = 0.0
+    last_learn: float = 0.0
+    last_step: float | None = None
+    reason: str = "start"
+    tr_f: float | None = None                # gefilterde kamertemperatuur (tegen 0,1 K-sprongen)
+    trv_ok: bool = True
+
+
+@dataclass
+class RoomSettings:
+    u_design: float = 0.85         # aanvoer zo kiezen dat de moeilijkste kamer hier uitkomt
+    kp: float = 1.0                # K/u extra afgifte per K tekort
+    ki: float = 0.10               # klepfractie per K·uur
+    i_max: float = 0.30
+    min_open: float = 0.10         # kleiner dan dit: dicht (voorkomt druppelen en pendelen)
+    write_step: float = 0.10       # pas schrijven bij ≥ 10 % verschil (spaart TRV-batterijen)
+    write_min_s: float = 600.0     # klep max. 1x per 10 min wijzigen
+    fan_min: float = 0.20
+    fan_max: float = 0.50
+    fan_min_s: float = 300.0
+    window_drop_k: float = 0.5     # 0,5 K in 10 min = 3 K/u
+    window_s: float = 1800.0
+    overheat_k: float = 0.5
+    frost: float = 7.0
+    supply_down: float = 6.0       # modelaanvoer max. zoveel onder de stooklijn
+    supply_up: float = 3.0         # en max. zoveel erboven
+
+
+class RoomController:
+    def __init__(self, rooms: list[RoomCfg], state: dict | None = None, settings: RoomSettings | None = None) -> None:
+        self.s = settings or RoomSettings()
+        self.rooms = {r.key: r for r in rooms}
+        st = state or {}
+        models = st.get("models") or {}
+        self.models = {k: RoomModel(models.get(k)) for k in self.rooms}
+        self.mode: dict[str, str] = {k: (st.get("mode") or {}).get(k, "heat") for k in self.rooms}
+        self.manual: dict[str, tuple[float, float]] = {k: tuple(v) for k, v in (st.get("manual") or {}).items()
+                                                       if k in self.rooms}
+        self.state = {k: RoomState(integ=float((st.get("integ") or {}).get(k, 0.0))) for k in self.rooms}
+
+    def export_state(self) -> dict:
+        return {"models": {k: m.export() for k, m in self.models.items()}, "mode": self.mode,
+                "manual": {k: list(v) for k, v in self.manual.items()},
+                "integ": {k: round(s.integ, 3) for k, s in self.state.items()}}
+
+    # ------------------------------------------------------------ waarnemen en leren
+    def observe(self, key: str, wall: float, tr: float | None, to: float | None, ts: float | None,
+                flowing: bool) -> None:
+        rs, m = self.state[key], self.models[key]
+        if tr is None:
+            rs.hist.clear()
+            rs.samples.clear()
+            return
+        rs.hist.append((wall, tr))
+        while rs.hist and wall - rs.hist[0][0] > 900:
+            rs.hist.popleft()
+        # raam open: snelle daling
+        old = [t for w, t in rs.hist if wall - w <= 600]
+        if old and max(old) - tr >= self.s.window_drop_k and wall >= rs.window_until:
+            rs.window_until = wall + self.s.window_s
+            rs.samples.clear()
+        if wall - rs.last_sample < 300:
+            return
+        rs.last_sample = wall
+        if to is None or ts is None or rs.u is None or not rs.trv_ok or wall < rs.window_until:
+            rs.samples.clear()
+            return
+        if rs.samples and wall - rs.samples[-1][0] > 900:
+            rs.samples.clear()                                         # gat in de meting
+        rs.samples.append((wall, tr, rs.u, rs.fan, ts, to, 1.0 if flowing else 0.0))
+        if wall - rs.last_learn < 600:
+            return
+        # y: temperatuurverloop over de laatste 30 min; x: gemiddelden over 40..10 min geleden (radiatortraagheid)
+        first = next((s for s in rs.samples if wall - s[0] <= 1860), None)
+        if first is None or wall - first[0] < 1500:
+            return
+        win = [s for s in rs.samples if 600 <= wall - s[0] <= 2460] or list(rs.samples)
+        y = (tr - first[1]) / ((wall - first[0]) / 3600)
+        xs = [RoomModel.features(s[2], s[3], s[4], s[1], s[5], s[6]) for s in win]
+        x = [sum(c) / len(xs) for c in zip(*xs)]
+        rs.last_learn = wall
+        m.update(x, y, self.rooms[key].fan is not None)
+
+    # ------------------------------------------------------------ besluiten
+    def decide(self, key: str, wall: float, tr: float | None, target: float | None, to: float | None,
+               ts: float | None, flowing: bool) -> dict:
+        """Gewenste klep (0..1) en fan (0..1) plus of er nu geschreven moet worden."""
+        s, rs, m, cfg = self.s, self.state[key], self.models[key], self.rooms[key]
+        dt_h = 0.0 if rs.last_step is None else _clip((wall - rs.last_step) / 3600, 0.0, 0.1)
+        rs.last_step = wall
+        if tr is not None:
+            rs.tr_f = tr if rs.tr_f is None or abs(tr - rs.tr_f) > 1.0 else rs.tr_f + (
+                1 - math.exp(-dt_h * 6)) * (tr - rs.tr_f)                  # tijdconstante 10 min
+        force = False
+        if tr is None:
+            u, why = (rs.u if rs.u is not None else 0.5), "geen kamertemperatuur: klep ongewijzigd"
+        elif self.mode.get(key) == "off":
+            u, why, force = (1.0, "uit, maar vorstbeveiliging", True) if tr < s.frost else (0.0, "uit", True)
+        elif target is None:
+            u, why = (rs.u if rs.u is not None else 0.5), "geen kamerdoel"
+        elif wall < rs.window_until:
+            u, why, force = 0.0, "raam open (snelle temperatuurdaling): klep dicht", True
+        elif tr >= target + s.overheat_k:
+            u, why, force = 0.0, f"{tr - target:.1f} K te warm: klep dicht", True
+            rs.integ = min(rs.integ, 0.0)
+        else:
+            to_ = to if to is not None else 5.0
+            ts_ = ts if ts is not None else 35.0
+            err = target - (rs.tr_f if rs.tr_f is not None else tr)
+            need = m.steady_need(target, to_) + s.kp * err
+            cap = m.capacity(rs.fan if cfg.fan else 0.0, ts_, tr)
+            base = 1.0 if cap < 0.05 else need / cap
+            u = base + rs.integ
+            if 0.0 < u < 1.0 and flowing:                              # anti-windup: alleen integreren binnen bereik
+                rs.integ = _clip(rs.integ + s.ki * err * dt_h, -s.i_max, s.i_max)
+            u = _clip(u, 0.0, 1.0)
+            why = (f"nodig {max(0.0, need):.2f} K/u, max {cap:.2f} K/u bij {ts_:.0f} °C"
+                   f" → {u:.0%} (I {rs.integ:+.0%})")
+            if err >= 1.0:
+                u, force, why = 1.0, True, f"{err:.1f} K te koud: klep open"
+            if u < s.min_open:
+                u = 0.0
+        u = round(u * 20) / 20                                          # stappen van 5 %
+        rs.u_want, rs.reason = u, why
+        write = rs.u is None or (abs(u - rs.u) >= s.write_step - 1e-9 and (
+            force or wall - rs.u_t >= s.write_min_s))
+        if rs.u is not None and abs(u - rs.u) < 1e-9:
+            write = False
+        # fan: alleen bij circulatie en klep echt open
+        fan = 0.0
+        if cfg.fan and flowing and u >= 0.3 and self.mode.get(key) != "off" and wall >= rs.window_until:
+            lift = _clip((u - 0.3) / 0.6, 0.0, 1.0)
+            if tr is not None and target is not None and target - tr >= 0.3:
+                lift = 1.0
+            fan = round((s.fan_min + (s.fan_max - s.fan_min) * lift) * 20) / 20
+        fan_write = bool(cfg.fan) and abs(fan - rs.fan) >= 0.05 - 1e-9 and (
+            fan == 0.0 or rs.fan == 0.0 or wall - rs.fan_t >= s.fan_min_s)
+        return {"u": u, "write": write, "fan": fan, "fan_write": fan_write, "why": why}
+
+    def wrote_valve(self, key: str, u: float, wall: float) -> None:
+        rs = self.state[key]
+        rs.u, rs.u_t = u, wall
+
+    def wrote_fan(self, key: str, fan: float, wall: float) -> None:
+        rs = self.state[key]
+        rs.fan, rs.fan_t = fan, wall
+
+    # ------------------------------------------------------------ aanvoer
+    def supply_need(self, targets: dict[str, float | None], to: float | None, curve: float,
+                    temps: dict[str, float | None], wall: float) -> dict:
+        """Laagste aanvoer waarbij elke kamer zijn doel haalt met de klep op u_design."""
+        s = self.s
+        if to is None:
+            return {"supply": None, "weight": 0.0, "room": None}
+        best = None
+        for key, target in targets.items():
+            m, rs, cfg = self.models[key], self.state[key], self.rooms[key]
+            if (target is None or self.mode.get(key) == "off" or temps.get(key) is None
+                    or wall < rs.window_until):
+                continue
+            fan = s.fan_max if cfg.fan else 0.0
+            need = m.steady_need(target, to)
+            per_k = (m.a + m.af * fan) * s.u_design
+            ts = target + need / per_k if per_k > 0 else curve
+            tr = temps.get(key)
+            if tr is not None and tr < target - 0.3:                   # achterstand: iets ruimer
+                ts += min(3.0, 2.0 * (target - tr))
+            if best is None or ts > best[0]:
+                best = (ts, key, m.confidence)
+        if best is None:
+            return {"supply": None, "weight": 0.0, "room": None}
+        ts = _clip(best[0], curve - s.supply_down, curve + s.supply_up)
+        weights = [self.models[k].confidence for k in targets if targets[k] is not None]
+        weight = min(best[2], sum(weights) / len(weights)) if weights else 0.0
+        return {"supply": round(ts, 1), "weight": round(weight, 2), "room": best[1]}

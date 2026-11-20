@@ -7,7 +7,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
-from .const import (CONF_BASIS, CONF_CAPPED, CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, PLAN_FIELDS, PLAN_TIMES, CONF_OUTDOOR, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
+from .const import (CONF_BASIS, CONF_CAPPED, CONF_ROOM_CFG, CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, PLAN_FIELDS, PLAN_TIMES, CONF_OUTDOOR, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
                     CONF_UP_TOPIC, DOMAIN, SETTING_FIELDS)
 from .engine import Settings
 from .planner import PlanSettings
@@ -37,6 +37,8 @@ def _entity_schema(defaults: dict) -> dict:
             CONF_COLD_EXCLUDE, [e for e in defaults.get(CONF_ROOMS, []) if "toilet" in e])}): ent("climate", True),
         vol.Optional(CONF_CAPPED, description={"suggested_value": defaults.get(
             CONF_CAPPED, [e for e in defaults.get(CONF_ROOMS, []) if "slaapkamer" in e])}): ent("climate", True),
+        vol.Optional(CONF_ROOM_CFG, description=sug(CONF_ROOM_CFG)): selector.TextSelector(
+            selector.TextSelectorConfig(multiline=True)),
     }
 
 

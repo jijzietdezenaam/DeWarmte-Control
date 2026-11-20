@@ -270,8 +270,9 @@ class PricePlanner:
         return None
 
     def room_target(self, room: str, presets: dict, home: bool, wall: float,
-                    current_target: float | None) -> tuple[float | None, str]:
+                    current_target: float | None, offset: float | None = None) -> tuple[float | None, str]:
         s = self.s
+        off = self.offset if offset is None else offset
         night = self.block(wall) == "nacht"
         base = self.base_target(presets, night, home)
         if base is None:
@@ -293,9 +294,9 @@ class PricePlanner:
         label = f"{'nacht (eco)' if night else 'dag (comfort)'}{'' if home else ', afwezig'}"
         if warm is not None:
             base, label = warm, "warme periode"
-        target = _q(base + self.offset, 0.5 if s.step >= 0.5 else s.step)
+        target = _q(base + off, 0.5 if s.step >= 0.5 else s.step)
         target = max(base - s.band_down, min(base + s.band_up, target))
-        why = f"{label} {base:g} + prijs {self.offset:+g}"
+        why = f"{label} {base:g} + prijs {off:+g}"
         if capped and target > s.room_max:
             target, why = s.room_max, f"{why}, begrensd op maximum {s.room_max:g}"
         return target, why

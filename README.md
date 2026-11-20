@@ -66,7 +66,7 @@ De sensoren **Laatste actie** (laatste 30 acties als attribuut) en **Laatste uur
 - Het uurrapport en het logboek: `Schrijfactie …` regels in het HA-log, CSV in `/config/dewarmte/`.
 
 ## Tests
-`python3 tests/test_core.py` en `python3 tests/test_ha_glue.py` (geen Home Assistant nodig).
+`python3 tests/test_core.py`, `python3 tests/test_ha_glue.py` en `python3 tests/test_rooms.py` (geen Home Assistant nodig).
 
 ## Nieuw in 3.2
 ### Service-instellingen
@@ -229,3 +229,38 @@ Meldt een warmtemeter een foutcode (bijv. 128: geen ultrasoon meetsignaal, meest
 - De schrijfbeveiliging telde ook het *uitzetten* van de unit mee voor het aan/uit-budget (12 per 24 uur). Was dat op,
   dan bleef de unit draaien zonder warmtevraag. Uitzetten is altijd veilig en telt nu niet meer mee; alleen starts
   zijn begrensd (plus de bestaande minimale loop- en stilstandtijd).
+
+## Nieuw in 3.6: zelflerende kamerregeling (vervangt Versatile Thermostat)
+
+DeWarmte kan de TRV-kleppen (Sonoff TRVZB), radiatorfans en aanvoer nu zelf regelen. Per kamer
+leert het een warmtemodel met recursieve kleinste kwadraten:
+
+    dT/dt = (a + af·fan) · klep · (T_aanvoer − T_kamer) · circulatie − b · (T_kamer − T_buiten) + d
+
+- **Klep per kamer:** precies zoveel open als nodig om het doel vast te houden, plus een P- en een
+  trage I-correctie. Onder 10 % gaat de klep dicht (geen druppelen en pendelen). Er wordt alleen
+  geschreven bij ≥ 10 % verschil en hooguit 1× per 10 min. Dat spaart de batterijen.
+  Uitzonderingen zijn raam open, te warm (+0,5 K), uit en vorst. Klepstand X wordt geschreven als
+  `opening_degree = X` en `closing_degree = 100 − X`.
+- **Radiatorfans (optioneel):** 20–50 % bij circulatie en een klep ≥ 30 %. Het effect wordt mee geleerd (`af`).
+- **Aanvoer:** de laagste aanvoer waarbij de moeilijkste kamer zijn doel haalt met de klep op 85 %.
+  De aanvoer blijft begrensd op stooklijn −6 / +3 K. Het model neemt de stooklijn geleidelijk over,
+  naarmate het meer heeft geleerd (± 12 uur aan metingen met warmteafgifte). Klepbijsturing en
+  offset blijven daarbovenop werken.
+- **Raam open:** 0,5 K daling binnen 10 min → klep 30 min dicht.
+- **Kamerdoelen:** dag/nacht per kamer, afwezig −1 K, prijsslim, warme periodes, maximum, vakantiemodus.
+  Een handmatig doel (op de thermostaat) geldt tot het volgende dag/nacht-blok, maximaal 3 uur.
+  Preset `schema` zet het weer terug.
+- **Entiteiten:**
+  - `climate.dewarmte_<kamer>` per kamer, met de attributen `valve_open_percent`, `klep_reden`,
+    `fan_percentage`, `raam_open`, `model` (geleerde waarden) en meer.
+  - Schakelaar **Kamerregeling**: uit = de TRV's krijgen hun eigen regeling terug
+    (opening 100 / closing 0, setpoint = kamerdoel). Dat gebeurt ook als *Regeling actief* uitgaat.
+- **Ook als de kamerregeling uit staat**, leert het model al mee met de kleppen die VTherm/de TRV zelf stuurt.
+
+Configuratie: optie *Zelflerende kamerregeling*, één regel per kamer:
+
+    climate.woonkamer_2 | Woonkamer | sensor.woonkamer_temp | climate.woonkamer_trv | number.trv_valve_opening_degree | number.trv_valve_closing_degree | 20,5 | 19 | fan.jaga
+
+Het kamer-id (eerste kolom) is ook de sleutel voor warme periodes, maximum en TRV-sensorkamers. Na het
+verwijderen van VTherm kan de DeWarmte-thermostaat dat entity-id overnemen.

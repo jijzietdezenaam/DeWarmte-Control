@@ -149,6 +149,8 @@ class Inputs:
     dhw_need: float | None = None          # minimaal tapwatersetpoint voor een geleerd tapmoment
     dhw_need_reason: str = ""
     vacation: bool = False                  # vakantiemodus actief: vast tapwatersetpoint, geen tapmomenten
+    supply_model: float | None = None       # aanvoer volgens het geleerde kamermodel (kamerregeling)
+    supply_weight: float = 0.0              # 0..1: hoeveel het kamermodel meetelt t.o.v. de stooklijn
     critical_ok: bool = False
 
 
@@ -236,7 +238,11 @@ class Engine:
 
         # aanvoersetpoint
         ta_eff = ta if ta is not None else 5.0
-        base = s.curve_start - s.curve_slope * ta_eff
+        curve = s.curve_start - s.curve_slope * ta_eff
+        base = curve
+        w = max(0.0, min(1.0, inp.supply_weight))
+        if inp.supply_model is not None and w > 0:
+            base = curve + w * (inp.supply_model - curve)       # geleerd kamermodel neemt de stooklijn geleidelijk over
         base_load = self.season and ta_eff < (s.vacation_base_below if inp.vacation else s.keep_on_below)
         want = (self.season and (self.demand or base_load)) or source_support
         self._trim_update(valves, worst, now, want and self.season)
@@ -283,7 +289,8 @@ class Engine:
             "season_heating": self.season, "heat_demand": self.demand,
             "demand_level": None if level is None else round(level, 1),
             "worst_deficit": round(worst, 2), "outdoor_used": ta,
-            "base_curve": round(base, 1), "room_boost": round(boost, 1), "offset": self.offset,
+            "base_curve": round(base, 1), "curve": round(curve, 1), "model_supply": inp.supply_model,
+            "model_weight": round(w, 2), "room_boost": round(boost, 1), "offset": self.offset,
             "feedforward": round(ff, 2), "trim": self.trim, "trim_reason": self.trim_reason,
             "room_deficits": {k: round(v, 2) for k, v in eff.items()},
             "supply_target": target, "shortfall": None if shortfall is None else round(shortfall, 1),

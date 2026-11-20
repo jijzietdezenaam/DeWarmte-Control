@@ -114,6 +114,7 @@ def build(r: Resolve, rooms: list[str], price_entity: str | None = None) -> dict
             tile(r("switch", "control"), "Regeling actief", tap_action={"action": "toggle"}),
             tile(r("switch", "plan"), "Prijsslim verwarmen", tap_action={"action": "toggle"}),
             tile(r("switch", "vacation"), "Vakantiemodus", tap_action={"action": "toggle"}),
+            tile(r("switch", "room_control"), "Kamerregeling", tap_action={"action": "more-info"}),
             tile(r("datetime", "vacation_return"), "Vakantie terug op"),
             tile(s("plan_offset"), "Prijs-offset kamers"),
             tile(s("planned"), "Gewenst"),

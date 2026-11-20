@@ -52,7 +52,13 @@ mod("homeassistant.components.button", ButtonEntity=_Base)
 mod("homeassistant.components.number", NumberEntity=_Base, NumberMode=_E._C())
 class HAErr(Exception): pass
 mod("homeassistant.exceptions", HomeAssistantError=HAErr, ConfigEntryNotReady=HAErr)
-mod("homeassistant.const", EntityCategory=_E._C(), PERCENTAGE="%", UnitOfEnergy=_E._C(), UnitOfFrequency=_E._C(), UnitOfPower=_E._C(), UnitOfTemperature=_E._C())
+class _Flag(int):
+    def __or__(s, o): return _Flag(int(s) | int(o))
+class _HV:
+    HEAT, OFF, HEATING, IDLE = "heat", "off", "heating", "idle"
+mod("homeassistant.components.climate", ClimateEntity=_Base, HVACMode=_HV, HVACAction=_HV,
+    ClimateEntityFeature=types.SimpleNamespace(TARGET_TEMPERATURE=_Flag(1), PRESET_MODE=_Flag(16), TURN_ON=_Flag(256), TURN_OFF=_Flag(128)))
+mod("homeassistant.const", ATTR_TEMPERATURE="temperature", EntityCategory=_E._C(), PERCENTAGE="%", UnitOfEnergy=_E._C(), UnitOfFrequency=_E._C(), UnitOfPower=_E._C(), UnitOfTemperature=_E._C())
 mod("homeassistant.components.sensor", SensorDeviceClass=_E, SensorStateClass=_E, SensorEntity=_Base, SensorEntityDescription=_Desc)
 mod("homeassistant.components.binary_sensor", BinarySensorDeviceClass=_E, BinarySensorEntity=_Base, BinarySensorEntityDescription=_Desc)
 
@@ -63,7 +69,7 @@ def load(n):
     m = importlib.util.module_from_spec(spec); sys.modules[f"dewarmte.{n}"] = m; spec.loader.exec_module(m); return m
 bus, regs, const, eng = load("bus"), load("registers"), load("const"), load("engine")
 load("params"); load("writes"); load("report"); load("obslog"); coord = load("coordinator"); sens = load("sensor"); binm = load("binary_sensor")
-sw = load("switch"); btn = load("button"); num = load("number"); schema = load("schema"); dash = load("dashboard")
+rooms_m = load("rooms"); clim = load("climate"); sw = load("switch"); btn = load("button"); num = load("number"); schema = load("schema"); dash = load("dashboard")
 import yaml
 
 # ---- nep-DR164 met de echte registerwaarden
@@ -98,6 +104,7 @@ class States:
     def __init__(s): s.d = {}
     def get(s, e): return s.d.get(e)
 class Hass:
+    dead = set()
     states = States(); config = types.SimpleNamespace(path=lambda p: "/tmp/dw_obs_test")
     def async_add_executor_job(s, f, *a):
         fut = asyncio.get_running_loop().create_future(); fut.set_result(f(*a)); return fut
@@ -116,6 +123,13 @@ class Hass:
                 return {"prices": {"Thuis": rows}}
             if (domain, svc) == ("climate", "set_temperature"):
                 Hass.states.d[data["entity_id"]].attributes["temperature"] = data["temperature"]
+            if (domain, svc) == ("number", "set_value"):
+                if data["entity_id"] in Hass.dead:
+                    raise HAErr("MAC_NO_ACK")
+                Hass.states.d[data["entity_id"]].state = str(data["value"])
+            if domain == "fan":
+                st = Hass.states.d[data["entity_id"]]
+                st.state = "on" if svc == "set_percentage" else "off"; st.attributes["percentage"] = data.get("percentage", 0)
 class Entry:
     data = {"up_topic": "dr164/up", "down_topic": "dr164/down", "rooms": ["climate.a", "climate.b", "climate.woonkamer"],
             "outdoor_entity": "sensor.buiten", "price_entity": "sensor.prijs", "notify_service": "notify.mobile_app_test"}
@@ -281,10 +295,61 @@ async def main():
     assert sorted(t for t, p, r in retained if p == "" and r) == ["dewarmte/bridge/availability",
         "dewarmte/dhw_2/x/state", "homeassistant/sensor/dhw_2_22_16_x/config"], retained
 
+    # ---- zelflerende kamerregeling (vervangt VTherm)
+    h.states.d.update({
+        "sensor.t_w": St("19.6"), "climate.trv_w": St("heat", temperature=20.5, current_temperature=21.0),
+        "number.w_open": St("40"), "number.w_close": St("60"),
+        "fan.jaga": St("off", percentage=0),
+        "sensor.t_f": St("19.9"), "climate.trv_f": St("off", temperature=17.0),
+        "number.f_open": St("100"), "number.f_close": St("0")})
+    c.room_cfgs = rooms_m.parse_room_config(
+        "climate.woonkamer | Woonkamer | sensor.t_w | climate.trv_w | number.w_open | number.w_close | 20,5 | 19 | fan.jaga\n"
+        "climate.b | Finn | sensor.t_f | climate.trv_f | number.f_open | number.f_close | 19 | 18")
+    c.rooms_ctl = rooms_m.RoomController(c.room_cfgs)
+    c.planner.capped.add("climate.b")                                        # slaapkamer: maximum 20 °C
+    ents = [clim.RoomThermostat(c, Entry(), x) for x in c.room_cfgs]
+    assert ents[0]._attr_unique_id == "abc_room_woonkamer" and not ents[0].available
+    h.states.d["climate.woonkamer"].attributes.pop("valve_open_percent", None)   # VTherm al uit
+    c._last_room = 0; await c._async_update_data()                           # uit: alleen meekijken
+    assert not any(x[0] == "number" for x in Hass.services.calls)
+    assert c.room_info["climate.woonkamer"]["valve"] == 40                   # klep uit opening/closing afgeleid
+    MAPS[1][25] = 1 << 6                                                     # circulatiepomp AO draait
+    await c.async_set_room_control(True)
+    assert c.engine.offset == 0 and c.engine.trim == 0
+    for st_ in c._sched.values(): st_["next"] = 0.0
+    c._last_room = 0; await c._async_update_data()
+    calls = [x for x in Hass.services.calls if x[0] in ("number", "fan") or x[1] == "set_hvac_mode"]
+    wo, wc = int(h.states.d["number.w_open"].state), int(h.states.d["number.w_close"].state)
+    assert wo + wc == 100 and wo > 40, (wo, wc, c.room_info["climate.woonkamer"])   # 0,9 K te koud: verder open
+    fo, fc = int(h.states.d["number.f_open"].state), int(h.states.d["number.f_close"].state)
+    assert fo + fc == 100 and fo < 100, (fo, fc, c.room_info["climate.b"])
+    assert ("climate", "set_hvac_mode", {"entity_id": "climate.trv_f", "hvac_mode": "heat"}) in Hass.services.calls
+    assert h.states.d["fan.jaga"].state == "on" and 20 <= h.states.d["fan.jaga"].attributes["percentage"] <= 50, calls
+    assert ents[0].available and ents[0].current_temperature == 19.6 and ents[0].hvac_action == "heating"
+    assert ents[0].extra_state_attributes["valve_open_percent"] == wo
+    assert c._room("climate.woonkamer").valve == wo
+    # handmatig: doel tot het volgende blok, max. 3 uur
+    await ents[1].async_set_temperature(temperature=21.0)
+    assert ents[1].preset_mode == "handmatig" and ents[1].target_temperature == 20.0   # slaapkamer-maximum 20
+    await ents[1].async_set_preset_mode("schema"); assert ents[1].preset_mode == "schema"
+    await ents[1].async_set_hvac_mode("off")
+    assert h.states.d["number.f_open"].state == "0" and ents[1].hvac_action == "off"
+    # TRV die niet antwoordt: fout gelogd, regeling loopt door
+    Hass.dead.add("number.w_open"); h.states.d["sensor.t_w"].state = "22.8"
+    c._last_room = 0; await c._async_update_data()
+    assert c.room_info["climate.woonkamer"]["trv_ok"] is False, c.room_info["climate.woonkamer"]
+    assert any(a_["name"] == "klep Woonkamer" and not a_["ok"] for a_ in c.actions)
+    Hass.dead.clear()
+    # uitzetten: TRV's krijgen hun eigen regeling terug
+    await c.async_set_room_control(False)
+    assert h.states.d["number.w_open"].state == "100" and h.states.d["number.w_close"].state == "0"
+    assert h.states.d["fan.jaga"].state == "off"
+    print("PASS kamerregeling:", {k: (i["valve"], i["target"], i["valve_reason"][:40]) for k, i in c.room_info.items()})
+
     # ---- dashboard: elke verwijzing moet naar een echte entiteit wijzen
     ids = {("sensor", d.key) for d in sens.SENSORS + sens.EXTRA} | {("binary_sensor", d.key) for d in binm.BINARIES}
     ids |= {("sensor", x.key) for x in regs.RAW if not isinstance(x.bit, int)} | {("binary_sensor", x.key) for x in regs.RAW if isinstance(x.bit, int)}
-    ids |= {("switch", "control"), ("switch", "service_mode"), ("switch", "plan"), ("switch", "vacation"), ("datetime", "vacation_return"), ("button", "report_now"), ("button", "disinfect_start"), ("button", "disinfect_stop"), ("button", "week_now"), ("button", "vent_start"), ("button", "vent_stop")}
+    ids |= {("switch", "control"), ("switch", "service_mode"), ("switch", "plan"), ("switch", "vacation"), ("switch", "room_control"), ("datetime", "vacation_return"), ("button", "report_now"), ("button", "disinfect_start"), ("button", "disinfect_stop"), ("button", "week_now"), ("button", "vent_start"), ("button", "vent_stop")}
     ids |= {("number", f"n{k[0]}_{k[1]}") for k in load("writes").SERVICE}
     bad = []
     def resolve(platform, key):

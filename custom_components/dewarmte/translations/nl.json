@@ -22,7 +22,8 @@
           "price_service": "Prijsvoorspelling-dienst (bijv. tibber.get_prices)",
           "warm_periods": "Warme periodes per kamer, één regel per kamer: climate.badkamer | 21 | ma-vr 05:30-07:30, 20:00-22:30 | za-zo 08:00-10:00, 20:00-22:30",
           "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)",
-          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)"
+          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)",
+          "room_control_config": "Zelflerende kamerregeling, één regel per kamer: kamer-id | naam | kamersensor | TRV-climate | number klep-opening | number klep-sluiting | dag °C | nacht °C | fan (optioneel). Voorbeeld: climate.woonkamer_2 | Woonkamer | sensor.woonkamer_temp | climate.woonkamer_trv | number.trv_valve_opening_degree | number.trv_valve_closing_degree | 20,5 | 19 | fan.jaga"
         }
       }
     },
@@ -83,7 +84,8 @@
           "legionella_auto_days": "Automatische desinfectie na zoveel dagen zonder ≥ 60 °C (0 = uit)",
           "dhw_usage_temp": "Tapwater boven minimaal op geleerde tapmomenten (°C, 0 = uit)",
           "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)",
-          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)"
+          "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)",
+          "room_control_config": "Zelflerende kamerregeling, één regel per kamer: kamer-id | naam | kamersensor | TRV-climate | number klep-opening | number klep-sluiting | dag °C | nacht °C | fan (optioneel). Voorbeeld: climate.woonkamer_2 | Woonkamer | sensor.woonkamer_temp | climate.woonkamer_trv | number.trv_valve_opening_degree | number.trv_valve_closing_degree | 20,5 | 19 | fan.jaga"
         }
       }
     }

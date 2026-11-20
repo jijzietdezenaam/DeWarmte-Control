@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import logging
 import time
 from datetime import timedelta
@@ -18,13 +19,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import registers as R
 from .bus import ModbusBus, ModbusError, ModbusTimeout, read_registers
-from .const import (CONF_CAPPED, CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_OUTDOOR, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
+from .const import (CONF_CAPPED, CONF_ROOM_CFG, CONF_COLD_EXCLUDE, CONF_DOWN_TOPIC, CONF_NOTIFY, CONF_OUTDOOR, CONF_PRESENCE, CONF_PRICE_SERVICE, CONF_SCHEDULES, CONF_PRICE, CONF_PRICE_LEVEL, CONF_ROOMS, CONF_TRV_ROOMS,
                     CONF_UP_TOPIC, DOMAIN)
 from .engine import Engine, Inputs, Room, Settings
 from .insights import Alerts, CycleCounter, DhwLearner, DhwSettings, WeekStats
 from .obslog import ObsLog
 from .planner import PlanSettings, PricePlanner
 from .report import HourReport
+from .rooms import RoomController, parse_room_config
 from .writes import WriteGuard
 
 HARD_BLOCKS = ("kritieke Modbus-data niet vers", "storing actief", "ontdooien actief")
@@ -89,6 +91,17 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.last_alerts: list[dict] = []
         self._unsub_week = None
         self._saved_t = 0.0
+        self.room_cfgs = parse_room_config(self.cfg.get(CONF_ROOM_CFG))
+        self.rooms_ctl = RoomController(self.room_cfgs)
+        self.room_control = False            # zelflerende kamerregeling (vervangt VTherm) aan/uit
+        self.room_info: dict[str, dict] = {}
+        self._room_inputs: dict[str, Room] = {}
+        self._last_room = 0.0
+        self._supply_ema: float | None = None
+        self._supply_t: float | None = None
+        self._supply_weight = 0.0
+        self.supply_info: dict = {}
+        self._trv_set: dict[str, float] = {}
 
     # ------------------------------------------------------------ levenscyclus
     async def async_setup(self) -> None:
@@ -104,6 +117,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.dhw = DhwLearner(DhwSettings(usage_temp=self.settings.dhw_usage_temp or 50.0), stored.get("dhw"))
         self.week = WeekStats(stored.get("week"))
         self.last_week = stored.get("last_week") or self.last_week
+        self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"))
+        self.room_control = bool(stored.get("room_control", False)) and bool(self.room_cfgs)
         self._unsub = await mqtt.async_subscribe(
             self.hass, self.cfg[CONF_UP_TOPIC], self._on_message, 0, encoding=None)
         self._unsub_time = async_track_time_change(self.hass, self._on_hour, minute=0, second=15)
@@ -169,13 +184,19 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 "plan_enabled": self.plan_enabled, "planner": self.planner.export_state(),
                 "vacation_on": self.vacation_on, "vacation_return": self.vacation_return,
                 "cycles": self.cycles.export_state(), "dhw": self.dhw.export_state(),
-                "week": self.week.export_state(), "last_week": self.last_week}
+                "week": self.week.export_state(), "last_week": self.last_week,
+                "rooms": self.rooms_ctl.export_state(), "room_control": self.room_control}
 
     async def async_set_control(self, enabled: bool, reason: str | None = None) -> None:
+        was = self.control_enabled
         self.control_enabled = enabled
         self.trip_reason = None if enabled else reason
         if enabled:
             self.guard.failures = 0
+            for rs in self.rooms_ctl.state.values():
+                rs.u = None                                    # kleppen opnieuw overnemen
+        elif was and self.room_control:
+            await self._hand_back()                            # TRV's niet op een vaste stand laten staan
         await self._store.async_save(self._state())
         _LOGGER.warning("Regeling %s%s", "AAN" if enabled else "UIT", f": {reason}" if reason else "")
         self.async_update_listeners()
@@ -487,6 +508,12 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
     def _room_rows(self) -> list[dict]:
         rows = []
         for ent in self.cfg.get(CONF_ROOMS, []):
+            if self.room_control and ent in self.room_info:
+                i = self.room_info[ent]
+                if i.get("current") is not None:
+                    rows.append({"id": ent, "name": i["name"], "current": i["current"], "target": i.get("target"),
+                                 "heating": i.get("mode") == "heat" and not i.get("window")})
+                continue
             st = self.hass.states.get(ent)
             if st is None or st.state in ("unavailable", "unknown"):
                 continue
@@ -615,6 +642,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
 
     # ------------------------------------------------------------ invoer voor de engine
     def _room(self, entity_id: str) -> Room:
+        if self.room_control and entity_id in self.rooms_ctl.rooms:
+            return self._room_inputs.get(entity_id) or Room(entity_id, available=False)
         st = self.hass.states.get(entity_id)
         if st is None or st.state in ("unavailable", "unknown"):
             return Room(entity_id, available=False)
@@ -625,7 +654,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         return Room(entity_id, True, st.state, _f(a.get("current_temperature")), _f(a.get("temperature")), valve,
                     trv_sensor=entity_id in (self.cfg.get(CONF_TRV_ROOMS) or []))
 
-    def _inputs(self, v: dict, status: dict) -> Inputs:
+    def _outdoor(self, v: dict) -> float | None:
         outdoor = None
         ent = self.cfg.get(CONF_OUTDOOR)
         if ent:
@@ -640,6 +669,10 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             self._last_outdoor = (outdoor, time.time())
         elif getattr(self, "_last_outdoor", None) and time.time() - self._last_outdoor[1] < 7200:
             outdoor = self._last_outdoor[0]
+        return outdoor
+
+    def _inputs(self, v: dict, status: dict) -> Inputs:
+        outdoor = self._outdoor(v)
         price = level = None
         if self.cfg.get(CONF_PRICE):
             st = self.hass.states.get(self.cfg[CONF_PRICE])
@@ -659,7 +692,9 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             price=price, price_level=level, critical_ok=bool(status.get(1, {}).get("ok")),
             price_rank=self.planner.rank_now(time.time()) if self.plan_enabled else None,
             plan_offset=self.planner.offset if self._plan_active() else None,
-            dhw_need=need, dhw_need_reason=need_reason, vacation=self.vacation_active(time.time()))
+            dhw_need=need, dhw_need_reason=need_reason, vacation=self.vacation_active(time.time()),
+            supply_model=self._supply_ema if self.room_control else None,
+            supply_weight=self._supply_weight if self.room_control else 0.0)
 
     # ------------------------------------------------------------ vakantiemodus
     def vacation_preheat_from(self) -> float | None:
@@ -755,6 +790,11 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         vac = self.vacation_active(now)
         rooms: dict[str, dict] = {}
         for ent in self.cfg.get(CONF_ROOMS, []):
+            if self.room_control and ent in self.rooms_ctl.rooms:
+                info = self.room_info.get(ent) or {}
+                rooms[ent] = {"doel": info.get("target"), "nu": info.get("target"), "reden": info.get("target_reason"),
+                              "afkoeling_k_per_uur": p.cool_rate.get(ent), "klep": info.get("valve")}
+                continue
             st = self.hass.states.get(ent)
             if st is None or st.state in ("unavailable", "unknown", "off"):
                 rooms[ent] = {"status": "uit" if st is not None and st.state == "off" else "niet beschikbaar"}
@@ -804,6 +844,200 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 "prijs_nu": p.price_now(now), "fout": self._price_error, "kamers": self.plan_rooms,
                 "afkoelsnelheid": p.cool_rate, "planning": p.plan(now)}
 
+    # ------------------------------------------------------------ zelflerende kamerregeling
+    async def async_set_room_control(self, on: bool) -> None:
+        """Aan: DeWarmte stuurt de TRV-kleppen en fans zelf. Uit: TRV's krijgen hun eigen regeling terug."""
+        if on and not self.room_cfgs:
+            from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
+            raise HomeAssistantError("Vul eerst de kamerregeling in bij de opties van DeWarmte.")
+        was, self.room_control = self.room_control, on
+        if on and not was:
+            # oude bijsturing (gemaakt met VTherm-kleppen) niet meenemen
+            self.engine.offset = self.engine.trim = 0.0
+            self.engine.trim_reason = "kamerregeling gestart"
+            for rs in self.rooms_ctl.state.values():
+                rs.u = None
+            self._last_room = 0.0
+        if not on and was:
+            await self._hand_back()
+        await self._store.async_save(self._state())
+        _LOGGER.warning("Kamerregeling %s", "AAN" if on else "UIT")
+        self.async_update_listeners()
+
+    async def _hand_back(self) -> None:
+        """TRV's weer zelf laten regelen: klep volledig vrij (opening 100 / closing 0), setpoint = kamerdoel."""
+        for cfg in self.room_cfgs:
+            target = (self.room_info.get(cfg.key) or {}).get("target")
+            await self._svc("number", "set_value", {"entity_id": cfg.opening, "value": 100})
+            await self._svc("number", "set_value", {"entity_id": cfg.closing, "value": 0})
+            if target:
+                await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": target})
+            if cfg.fan:
+                await self._svc("fan", "turn_off", {"entity_id": cfg.fan})
+
+    async def async_room_set_temperature(self, key: str, temp: float) -> None:
+        """Handmatig kamerdoel tot het volgende dag/nacht-blok (max. override_max_h uur)."""
+        now = time.time()
+        p = self.planner
+        if key in p.capped:
+            temp = min(temp, p.s.room_max)
+        until = min(p._next_boundary(now, key), now + p.s.override_max_h * 3600)   # noqa: SLF001
+        self.rooms_ctl.manual[key] = (float(temp), until)
+        self._last_room = 0.0
+        await self._room_step(self._last_values)
+        self.async_update_listeners()
+
+    async def async_room_set_mode(self, key: str, mode: str) -> None:
+        self.rooms_ctl.mode[key] = "off" if mode == "off" else "heat"
+        self._last_room = 0.0
+        await self._room_step(self._last_values)
+        self.async_update_listeners()
+
+    async def async_room_auto(self, key: str) -> None:
+        self.rooms_ctl.manual.pop(key, None)
+        self._last_room = 0.0
+        await self._room_step(self._last_values)
+        self.async_update_listeners()
+
+    async def _svc(self, domain: str, service: str, data: dict) -> str | None:
+        try:
+            await self.hass.services.async_call(domain, service, data, blocking=True)
+            return None
+        except Exception as err:  # noqa: BLE001 - een TRV die niet antwoordt mag de regeling niet stoppen
+            _LOGGER.info("%s.%s %s mislukt: %s", domain, service, data.get("entity_id"), err)
+            return str(err)
+
+    def _num(self, entity_id: str | None) -> float | None:
+        st = self.hass.states.get(entity_id) if entity_id else None
+        return None if st is None else _f(st.state)
+
+    def _room_target(self, key: str, cfg, now: float, home: bool, vac: bool) -> tuple[float | None, str]:
+        p = self.planner
+        if vac:
+            return p.s.vacation_room, "vakantiemodus"
+        man = self.rooms_ctl.manual.get(key)
+        if man and now < man[1]:
+            return man[0], "handmatig tot " + time.strftime("%H:%M", time.localtime(man[1]))
+        if man:
+            self.rooms_ctl.manual.pop(key, None)
+        presets = {"comfort_temp": cfg.day, "eco_temp": cfg.night,
+                   "comfort_away_temp": cfg.day - 1, "eco_away_temp": cfg.night - 1}
+        return p.room_target(key, presets, home, now, None, offset=p.offset if self._plan_active() else 0.0)
+
+    async def _room_step(self, v: dict) -> None:
+        if not self.room_cfgs:
+            return
+        now = time.time()
+        if now - self._last_room < 60:
+            return
+        self._last_room = now
+        ctl, p = self.rooms_ctl, self.planner
+        active = self.room_control and self.control_enabled
+        home, vac = self._home(), self.vacation_active(now)
+        to = self._outdoor(v) if v else None
+        flowing = bool(v.get("circulation_ao")) if v else False
+        d = self._last_decision or {}
+        curve = self.settings.curve_start - self.settings.curve_slope * (to if to is not None else 5.0)
+        ts_meas = v.get("t_supply") if v else None
+        ts_ctrl = d.get("supply_target") or curve
+        targets: dict[str, float | None] = {}
+        temps: dict[str, float | None] = {}
+        for cfg in self.room_cfgs:
+            key, rs = cfg.key, ctl.state[cfg.key]
+            trv = self.hass.states.get(cfg.trv)
+            tr = self._num(cfg.sensor)
+            if tr is None and trv is not None:
+                tr = _f(trv.attributes.get("current_temperature"))
+            fan_st = self.hass.states.get(cfg.fan) if cfg.fan else None
+            fan_ok = fan_st is not None and fan_st.state not in ("unavailable", "unknown")
+            if fan_ok:
+                pct = _f(fan_st.attributes.get("percentage"))
+                rs.fan = (pct or 0) / 100 if fan_st.state == "on" else 0.0
+            elif cfg.fan:
+                rs.fan = 0.0
+            opening, closing = self._num(cfg.opening), self._num(cfg.closing)
+            if not active:
+                # meekijken en leren met de kleppen die VTherm/de TRV zelf stuurt
+                old = self.hass.states.get(key)
+                valve = _f(old.attributes.get("valve_open_percent")) if old is not None else None
+                if valve is None and opening is not None and closing is not None:
+                    valve = min(opening, 100 - closing)
+                rs.u, rs.trv_ok = (None if valve is None else valve / 100), True
+            else:
+                if rs.u is None and opening is not None and closing is not None and abs(opening + closing - 100) <= 1:
+                    rs.u, rs.u_t = opening / 100, now - 600          # bestaande stand overnemen
+                if rs.u is not None and opening is not None and now - rs.u_t > 180:
+                    rs.trv_ok = abs(opening - rs.u * 100) <= 1.5
+            ctl.observe(key, now, tr, to, ts_meas if flowing else ts_ctrl, flowing)
+            target, t_why = self._room_target(key, cfg, now, home, vac)
+            targets[key], temps[key] = target, tr
+            dec = ctl.decide(key, now, tr, target, to, ts_ctrl, flowing)     # setpoint: geen klepgeschuif bij opstarten
+            errors = []
+            if active:
+                write = dec["write"] or (not rs.trv_ok and now - rs.u_t >= 600)     # niet bevestigd: opnieuw
+                if write:
+                    pct = int(round(dec["u"] * 100))
+                    e1 = await self._svc("number", "set_value", {"entity_id": cfg.opening, "value": pct})
+                    e2 = await self._svc("number", "set_value", {"entity_id": cfg.closing, "value": 100 - pct})
+                    errors += [e for e in (e1, e2) if e]
+                    old_pct = None if rs.u is None else int(round(rs.u * 100))
+                    ctl.wrote_valve(key, dec["u"], now)
+                    if errors:
+                        rs.trv_ok = False
+                    item = {"time": time.strftime("%H:%M"), "name": f"klep {cfg.name}", "register": cfg.opening,
+                            "old": "?" if old_pct is None else f"{old_pct} %", "new": f"{pct} %", "why": dec["why"],
+                            "ok": not errors, "error": "; ".join(errors) or None}
+                    self.report.action(item)
+                    self.actions = (self.actions + [item])[-30:]
+                if trv is not None and trv.state not in ("unavailable", "unknown"):
+                    if trv.state == "off":
+                        await self._svc("climate", "set_hvac_mode", {"entity_id": cfg.trv, "hvac_mode": "heat"})
+                    trv_t = _f(trv.attributes.get("temperature"))
+                    if (target is not None and (trv_t is None or abs(trv_t - target) >= 0.5)
+                            and now - self._trv_set.get(key, 0) >= 600):
+                        self._trv_set[key] = now                  # TRV-setpoint = kamerdoel (terugval als DeWarmte stopt)
+                        await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": target})
+                if cfg.fan and fan_ok and dec["fan_write"]:
+                    pct = int(round(dec["fan"] * 100))
+                    err = await self._svc("fan", "set_percentage", {"entity_id": cfg.fan, "percentage": pct}) if pct \
+                        else await self._svc("fan", "turn_off", {"entity_id": cfg.fan})
+                    if not err:
+                        ctl.wrote_fan(key, dec["fan"], now)
+            m = ctl.models[key]
+            valve_now = None if rs.u is None else round(rs.u * 100)
+            p.learn(key, tr, valve_now, now)
+            self.room_info[key] = {
+                "name": cfg.name, "current": tr, "target": target, "target_reason": t_why,
+                "mode": ctl.mode.get(key, "heat"), "manual": key in ctl.manual, "valve": valve_now,
+                "valve_want": None if dec["u"] is None else round(dec["u"] * 100), "valve_reason": dec["why"],
+                "fan": round(rs.fan * 100) if cfg.fan else None, "fan_ok": fan_ok if cfg.fan else None,
+                "window": now < rs.window_until, "trv_ok": rs.trv_ok, "heating": flowing and (rs.u or 0) > 0,
+                "model": {"afgifte_a": round(m.a, 3), "fan_af": round(m.af, 3) if cfg.fan else None,
+                          "verlies_b": round(m.b, 4), "winst_d": round(m.d, 2),
+                          "geleerd": round(m.confidence * 100), "metingen": m.n_all,
+                          "voorspelfout_k_per_uur": None if m.err is None else round(m.err, 2)}}
+            if active:
+                self._room_inputs[key] = Room(key, tr is not None, ctl.mode.get(key, "heat"), tr, target,
+                                              valve_now, trv_sensor=key in (self.cfg.get(CONF_TRV_ROOMS) or []))
+        need = ctl.supply_need(targets, to, curve, temps, now)
+        if active and need["supply"] is not None:
+            # traag volgen (tijdconstante 30 min), zodat de aanvoer niet springt
+            if self._supply_ema is None or self._supply_t is None:
+                self._supply_ema = need["supply"]
+            else:
+                a = 1 - math.exp(-max(0.0, now - self._supply_t) / 1800)
+                self._supply_ema = round(self._supply_ema + a * (need["supply"] - self._supply_ema), 2)
+            self._supply_t = now
+            self._supply_weight = need["weight"]
+        elif not active:
+            self._supply_ema, self._supply_t, self._supply_weight = None, None, 0.0
+        self.supply_info = {**need, "gevolgd": self._supply_ema, "stooklijn": round(curve, 1), "actief": active}
+
+    def rooms_summary(self) -> dict:
+        return {"actief": self.room_control, "aanvoer": self.supply_info,
+                "kamers": {k: {kk: vv for kk, vv in i.items() if kk != "model"} | {"model": i.get("model")}
+                           for k, i in self.room_info.items()}}
+
     # ------------------------------------------------------------ hoofdcyclus
     async def _async_update_data(self) -> dict:
         await self._poll()
@@ -811,6 +1045,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         status = self._status()
         await self._vacation_step()
         await self._plan_step()
+        await self._room_step(values)
         decision = self.engine.update(self._inputs(values, status))
         await self._execute(decision)
         await self._disinfect_step(values)

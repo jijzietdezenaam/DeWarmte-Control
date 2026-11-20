@@ -1,7 +1,7 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.5.10"
-PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number", "datetime"]
+VERSION = "3.6.0"
+PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number", "datetime", "climate"]
 
 CONF_UP_TOPIC = "up_topic"
 CONF_DOWN_TOPIC = "down_topic"
@@ -17,6 +17,7 @@ CONF_PRICE_SERVICE = "price_service"  # bijv. tibber.get_prices
 CONF_SCHEDULES = "warm_periods"       # extra warme periodes per kamer (tekst)
 CONF_COLD_EXCLUDE = "cold_alert_exclude"  # kamers zonder "blijft te koud"-melding
 CONF_CAPPED = "max_temp_rooms"          # kamers met een absoluut maximum kamerdoel (room_max)
+CONF_ROOM_CFG = "room_control_config"   # zelflerende kamerregeling: één regel per kamer (zie rooms.parse_room_config)
 
 # sleutel: (min, max, stap, label NL, label EN) - standaardwaarden staan in engine.Settings
 SETTING_FIELDS = {

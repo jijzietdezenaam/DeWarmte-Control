@@ -10,7 +10,8 @@ from .sensor import main_device
 
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([ControlSwitch(c, entry), ServiceSwitch(c, entry), PlanSwitch(c, entry), VacationSwitch(c, entry)])
+    async_add_entities([ControlSwitch(c, entry), ServiceSwitch(c, entry), PlanSwitch(c, entry), VacationSwitch(c, entry),
+                        RoomControlSwitch(c, entry)])
 
 
 class ControlSwitch(CoordinatorEntity, SwitchEntity):
@@ -125,3 +126,33 @@ class VacationSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self.coordinator.async_set_vacation(False)
+
+
+class RoomControlSwitch(CoordinatorEntity, SwitchEntity):
+    """Zelflerende kamerregeling: DeWarmte stuurt de TRV-kleppen, de radiatorfans en de aanvoer zelf.
+
+    Uit: de TRV's krijgen hun eigen regeling terug (klep vrij, setpoint = kamerdoel).
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Kamerregeling"
+    _attr_icon = "mdi:radiator"
+
+    def __init__(self, coordinator, entry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_room_control"
+        self._attr_device_info = main_device(entry)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.room_control
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.rooms_summary()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.async_set_room_control(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.async_set_room_control(False)
