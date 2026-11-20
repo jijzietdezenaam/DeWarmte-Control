@@ -105,6 +105,7 @@ class States:
     def get(s, e): return s.d.get(e)
 class Hass:
     dead = set()
+    def async_create_task(s, coro, name=None): return asyncio.ensure_future(coro)
     states = States(); config = types.SimpleNamespace(path=lambda p: "/tmp/dw_obs_test")
     def async_add_executor_job(s, f, *a):
         fut = asyncio.get_running_loop().create_future(); fut.set_result(f(*a)); return fut
@@ -295,6 +296,10 @@ async def main():
     assert sorted(t for t, p, r in retained if p == "" and r) == ["dewarmte/bridge/availability",
         "dewarmte/dhw_2/x/state", "homeassistant/sensor/dhw_2_22_16_x/config"], retained
 
+    async def settle():
+        if c._room_task: await c._room_task
+    async def upd():
+        r = await c._async_update_data(); await settle(); return r
     # ---- zelflerende kamerregeling (vervangt VTherm)
     h.states.d.update({
         "sensor.t_w": St("19.6"), "climate.trv_w": St("heat", temperature=20.5, current_temperature=21.0),
@@ -310,14 +315,14 @@ async def main():
     ents = [clim.RoomThermostat(c, Entry(), x) for x in c.room_cfgs]
     assert ents[0]._attr_unique_id == "abc_room_woonkamer" and not ents[0].available
     h.states.d["climate.woonkamer"].attributes.pop("valve_open_percent", None)   # VTherm al uit
-    c._last_room = 0; await c._async_update_data()                           # uit: alleen meekijken
+    c._last_room = 0; await upd()                           # uit: alleen meekijken
     assert not any(x[0] == "number" for x in Hass.services.calls)
     assert c.room_info["climate.woonkamer"]["valve"] == 40                   # klep uit opening/closing afgeleid
     MAPS[1][25] = 1 << 6                                                     # circulatiepomp AO draait
     await c.async_set_room_control(True)
     assert c.engine.offset == 0 and c.engine.trim == 0
     for st_ in c._sched.values(): st_["next"] = 0.0
-    c._last_room = 0; await c._async_update_data()
+    c._last_room = 0; await upd()
     calls = [x for x in Hass.services.calls if x[0] in ("number", "fan") or x[1] == "set_hvac_mode"]
     wo, wc = int(h.states.d["number.w_open"].state), int(h.states.d["number.w_close"].state)
     assert wo + wc == 100 and wo > 40, (wo, wc, c.room_info["climate.woonkamer"])   # 0,9 K te koud: verder open
@@ -329,15 +334,15 @@ async def main():
     assert ents[0].extra_state_attributes["valve_open_percent"] == wo
     assert c._room("climate.woonkamer").valve == wo
     # handmatig: doel tot het volgende blok, max. 3 uur
-    await ents[1].async_set_temperature(temperature=21.0)
+    await ents[1].async_set_temperature(temperature=21.0); await settle()
     assert ents[1].preset_mode == "handmatig" and ents[1].native_target_temperature == 20.0   # slaapkamer-maximum 20
-    await ents[1].async_set_preset_mode("schema"); assert ents[1].preset_mode == "schema"
-    await ents[1].async_set_hvac_mode("off")
+    await ents[1].async_set_preset_mode("schema"); await settle(); assert ents[1].preset_mode == "schema"
+    await ents[1].async_set_hvac_mode("off"); await settle()
     assert h.states.d["number.f_open"].state == "0" and ents[1].hvac_action == "off"
     # TRV die niet antwoordt: fout gelogd, regeling loopt door
     Hass.dead.add("number.w_open"); h.states.d["sensor.t_w"].state = "22.8"
-    c._last_room = 0; await c._async_update_data()
-    assert c.room_info["climate.woonkamer"]["trv_ok"] is False, c.room_info["climate.woonkamer"]
+    c._last_room = 0; await upd()
+    assert c.rooms_ctl.state["climate.woonkamer"].trv_ok is False
     assert any(a_["name"] == "klep Woonkamer" and not a_["ok"] for a_ in c.actions)
     Hass.dead.clear()
     # uitzetten: TRV's krijgen hun eigen regeling terug

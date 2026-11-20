@@ -102,6 +102,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self._supply_weight = 0.0
         self.supply_info: dict = {}
         self._trv_set: dict[str, float] = {}
+        self._room_task = None
 
     # ------------------------------------------------------------ levenscyclus
     async def async_setup(self) -> None:
@@ -899,10 +900,44 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         await self._room_step(self._last_values)
         self.async_update_listeners()
 
+    async def _room_io(self, cfg, dec: dict, write: bool, old_pct, fan_write: bool, target, trv,
+                       now: float) -> None:
+        key = cfg.key
+        rs = self.rooms_ctl.state[key]
+        if write:
+            pct = int(round(dec["u"] * 100))
+            errors = [e for e in (await self._svc("number", "set_value", {"entity_id": cfg.opening, "value": pct}),
+                                  await self._svc("number", "set_value", {"entity_id": cfg.closing, "value": 100 - pct}))
+                      if e]
+            if errors:
+                rs.trv_ok = False
+            item = {"time": time.strftime("%H:%M"), "name": f"klep {cfg.name}", "register": cfg.opening,
+                    "old": "?" if old_pct is None else f"{old_pct} %", "new": f"{pct} %", "why": dec["why"],
+                    "ok": not errors, "error": "; ".join(errors) or None}
+            self.report.action(item)
+            self.actions = (self.actions + [item])[-30:]
+        if trv is not None and trv.state not in ("unavailable", "unknown"):
+            if trv.state == "off":
+                await self._svc("climate", "set_hvac_mode", {"entity_id": cfg.trv, "hvac_mode": "heat"})
+            trv_t = _f(trv.attributes.get("temperature"))
+            if (target is not None and (trv_t is None or abs(trv_t - target) >= 0.5)
+                    and now - self._trv_set.get(key, 0) >= 600):
+                self._trv_set[key] = now                  # TRV-setpoint = kamerdoel (terugval als DeWarmte stopt)
+                await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": target})
+        if fan_write:
+            pct = int(round(dec["fan"] * 100))
+            err = await self._svc("fan", "set_percentage", {"entity_id": cfg.fan, "percentage": pct}) if pct \
+                else await self._svc("fan", "turn_off", {"entity_id": cfg.fan})
+            if err:
+                rs.fan_t = 0.0
+
     async def _svc(self, domain: str, service: str, data: dict) -> str | None:
         try:
-            await self.hass.services.async_call(domain, service, data, blocking=True)
+            await asyncio.wait_for(self.hass.services.async_call(domain, service, data, blocking=True), 30)
             return None
+        except asyncio.TimeoutError:
+            _LOGGER.info("%s.%s %s: geen antwoord binnen 30 s", domain, service, data.get("entity_id"))
+            return "geen antwoord binnen 30 s"
         except Exception as err:  # noqa: BLE001 - een TRV die niet antwoordt mag de regeling niet stoppen
             _LOGGER.info("%s.%s %s mislukt: %s", domain, service, data.get("entity_id"), err)
             return str(err)
@@ -942,6 +977,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         ts_ctrl = d.get("supply_target") or curve
         targets: dict[str, float | None] = {}
         temps: dict[str, float | None] = {}
+        jobs: list[tuple] = []
         for cfg in self.room_cfgs:
             key, rs = cfg.key, ctl.state[cfg.key]
             trv = self.hass.states.get(cfg.trv)
@@ -972,37 +1008,15 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             target, t_why = self._room_target(key, cfg, now, home, vac)
             targets[key], temps[key] = target, tr
             dec = ctl.decide(key, now, tr, target, to, ts_ctrl, flowing)     # setpoint: geen klepgeschuif bij opstarten
-            errors = []
             if active:
                 write = dec["write"] or (not rs.trv_ok and now - rs.u_t >= 600)     # niet bevestigd: opnieuw
+                old_pct = None if rs.u is None else int(round(rs.u * 100))
                 if write:
-                    pct = int(round(dec["u"] * 100))
-                    e1 = await self._svc("number", "set_value", {"entity_id": cfg.opening, "value": pct})
-                    e2 = await self._svc("number", "set_value", {"entity_id": cfg.closing, "value": 100 - pct})
-                    errors += [e for e in (e1, e2) if e]
-                    old_pct = None if rs.u is None else int(round(rs.u * 100))
                     ctl.wrote_valve(key, dec["u"], now)
-                    if errors:
-                        rs.trv_ok = False
-                    item = {"time": time.strftime("%H:%M"), "name": f"klep {cfg.name}", "register": cfg.opening,
-                            "old": "?" if old_pct is None else f"{old_pct} %", "new": f"{pct} %", "why": dec["why"],
-                            "ok": not errors, "error": "; ".join(errors) or None}
-                    self.report.action(item)
-                    self.actions = (self.actions + [item])[-30:]
-                if trv is not None and trv.state not in ("unavailable", "unknown"):
-                    if trv.state == "off":
-                        await self._svc("climate", "set_hvac_mode", {"entity_id": cfg.trv, "hvac_mode": "heat"})
-                    trv_t = _f(trv.attributes.get("temperature"))
-                    if (target is not None and (trv_t is None or abs(trv_t - target) >= 0.5)
-                            and now - self._trv_set.get(key, 0) >= 600):
-                        self._trv_set[key] = now                  # TRV-setpoint = kamerdoel (terugval als DeWarmte stopt)
-                        await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": target})
-                if cfg.fan and fan_ok and dec["fan_write"]:
-                    pct = int(round(dec["fan"] * 100))
-                    err = await self._svc("fan", "set_percentage", {"entity_id": cfg.fan, "percentage": pct}) if pct \
-                        else await self._svc("fan", "turn_off", {"entity_id": cfg.fan})
-                    if not err:
-                        ctl.wrote_fan(key, dec["fan"], now)
+                fan_write = bool(cfg.fan and fan_ok and dec["fan_write"])
+                if fan_write:
+                    ctl.wrote_fan(key, dec["fan"], now)
+                jobs.append((cfg, dec, write, old_pct, fan_write, target, trv))
             m = ctl.models[key]
             valve_now = None if rs.u is None else round(rs.u * 100)
             p.learn(key, tr, valve_now, now)
@@ -1019,6 +1033,11 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             if active:
                 self._room_inputs[key] = Room(key, tr is not None, ctl.mode.get(key, "heat"), tr, target,
                                               valve_now, trv_sensor=key in (self.cfg.get(CONF_TRV_ROOMS) or []))
+        if jobs and (self._room_task is None or self._room_task.done()):
+            # TRV's/fans op de achtergrond aansturen: een Zigbee-TRV die niet antwoordt mag de
+            # warmtepompregeling niet ophouden (ZHA wacht soms tientallen seconden per poging).
+            self._room_task = self.hass.async_create_task(
+                asyncio.gather(*(self._room_io(*j, now) for j in jobs)), "dewarmte_kamers")
         need = ctl.supply_need(targets, to, curve, temps, now)
         if active and need["supply"] is not None:
             # traag volgen (tijdconstante 30 min), zodat de aanvoer niet springt
