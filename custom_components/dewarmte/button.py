@@ -25,7 +25,7 @@ class ReportButton(CoordinatorEntity, ButtonEntity):
         self._attr_device_info = main_device(entry)
 
     async def async_press(self) -> None:
-        await self.coordinator.async_send_report()
+        await self.coordinator.async_send_report(force=True)
 
 
 class DisinfectStart(CoordinatorEntity, ButtonEntity):

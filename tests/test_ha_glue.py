@@ -307,7 +307,7 @@ async def main():
         "sensor.t_w": St("19.6"), "climate.trv_w": St("heat", temperature=20.5, current_temperature=21.0),
         "number.w_open": St("40"), "number.w_close": St("60"),
         "fan.jaga": St("off", percentage=0),
-        "sensor.t_f": St("19.9"), "climate.trv_f": St("off", temperature=17.0),
+        "sensor.t_f": St("20.6"), "climate.trv_f": St("off", temperature=17.0),
         "number.f_open": St("100"), "number.f_close": St("0")})
     c.room_cfgs = rooms_m.parse_room_config(
         "climate.woonkamer | Woonkamer | sensor.t_w | climate.trv_w | number.w_open | number.w_close | 20,5 | 19 | fan.jaga\n"
@@ -352,6 +352,19 @@ async def main():
     assert h.states.d["number.w_open"].state == "100" and h.states.d["number.w_close"].state == "0"
     assert h.states.d["fan.jaga"].state == "off"
     print("PASS kamerregeling:", {k: (i["valve"], i["target"], i["valve_reason"][:40]) for k, i in c.room_info.items()})
+
+    # ---- uurrapport: telefoon alleen bij problemen
+    n0 = sum(1 for x in Hass.services.calls if x[0] == "notify")
+    await c.async_send_report()
+    probs = c.last_report["problemen"]
+    n1 = sum(1 for x in Hass.services.calls if x[0] == "notify")
+    assert (n1 > n0) == bool(probs), (probs, n0, n1)
+    c.report.sample_rooms({"k": {"name": "Woonkamer", "current": 17.0, "target": 18.5}})
+    c.report.actions.append({"ok": False, "name": "klep Finn", "new": "0 %", "error": "MAC_NO_ACK", "time": "x", "old": "?"})
+    probs = c.report.problems({}, True, 5, ["Finn"], 45)
+    assert any("Woonkamer" in x for x in probs) and any("Pendelen" in x for x in probs), probs
+    assert any("MAC_NO_ACK" in x for x in probs) and any("TRV Finn" in x for x in probs), probs
+    print("PASS uurrapport:", probs)
 
     # ---- dashboard: elke verwijzing moet naar een echte entiteit wijzen
     ids = {("sensor", d.key) for d in sens.SENSORS + sens.EXTRA} | {("binary_sensor", d.key) for d in binm.BINARIES}

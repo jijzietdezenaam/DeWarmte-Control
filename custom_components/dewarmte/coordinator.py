@@ -586,13 +586,29 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 "laatste": [time.strftime("%a %d-%m %H:%M", time.localtime(t)) + f" ({top:.0f} °C)"
                             for t, top in self.dhw.events[-8:]][::-1]}
 
-    async def async_send_report(self) -> None:
+    async def async_send_report(self, force: bool = False) -> None:
+        """Uurrapport. Telefoon alleen bij problemen, of altijd met force (knop)."""
         title, text, data = self.report.build(self._last_values, self._last_decision, self.control_enabled,
                                               self.guard.counts(time.monotonic()))
-        text += f"\nCompressorstarts laatste uur: {self.cycles.last_hour(time.time())} | tapwater: {self.dhw.reason}"
-        self.last_report = {"titel": title, "tekst": text, **data}
+        starts = self.cycles.last_hour(time.time())
+        text += f"\nCompressorstarts laatste uur: {starts} | tapwater: {self.dhw.reason}"
+        trv_down = [i["name"] for i in self.room_info.values() if self.room_control and i.get("trv_ok") is False]
+        vac = self.vacation_active(time.time())
+        dhw_min = self.settings.vacation_dhw if vac else self.settings.dhw_floor
+        problems = self.report.problems(self._last_values, self.control_enabled, starts, trv_down, dhw_min)
+        if problems:
+            text = "Problemen:\n" + "\n".join(f"  ⚠️ {p_}" for p_ in problems) + "\n\n" + text
+        self.last_report = {"titel": title, "tekst": text, "problemen": problems, **data}
         persistent_notification.async_create(self.hass, text, title=title, notification_id="dewarmte_uurrapport")
-        await self._notify(title, text)
+        if force and not problems:
+            await self._notify(title, text)
+        elif problems:
+            # telefoon: alleen als er iets mis is, kort
+            d = self._last_decision or {}
+            ctx = (f"Buiten {d.get('outdoor_used', '–')} °C, aanvoer {self._last_values.get('t_supply', '–')} °C"
+                   f" (doel {d.get('supply_target', '–')} °C)")
+            await self._notify(f"DeWarmte: {len(problems)} probleem" + ("" if len(problems) == 1 else "en"),
+                               "\n".join(problems[:4]) + f"\n{ctx}")
         self.report.reset(self._last_values)
         self.async_update_listeners()
 
@@ -1083,6 +1099,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             self.service_until = 0.0
             _LOGGER.warning("Servicemodus automatisch UIT")
         self.report.sample(values, decision)
+        self.report.sample_rooms(self.room_info if self.room_control else
+                                 {r["id"]: r for r in self._room_rows()})
         self._last_values, self._last_decision = values, decision
 
         if decision["summary"] != self._last_summary:

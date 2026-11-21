@@ -283,3 +283,15 @@ verwijderen van VTherm kan de DeWarmte-thermostaat dat entity-id overnemen.
   klep snel af). Elders: ≥ 0,8 K daling binnen 15 min.
 - Klep max. 1× per 15 min wijzigen, behalve volledig dicht (te warm, raam, uit) of open (te koud).
 - Bij overname van een klep mag DeWarmte direct bijsturen.
+
+## Nieuw in 3.6.4: uurrapport alleen bij problemen
+Op de telefoon alleen nog een kort bericht als er iets mis is:
+- regeling uit;
+- een kamer het hele uur > 1 °C te koud;
+- meer dan 3 compressorstarts per uur;
+- een mislukte opdracht (Modbus, TRV, fan) of een TRV die zijn klepstand niet bevestigt;
+- COP < 2,5 (bij ≥ 0,2 kWh stroom);
+- tapwater onder het minimum.
+
+Het volledige rapport blijft in de HA-meldingen en in de sensor *Laatste uurrapport* staan. De knop
+*Uurrapport nu versturen* stuurt het altijd.
