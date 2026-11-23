@@ -199,9 +199,15 @@ class RoomController:
         self.rooms = {r.key: r for r in rooms}
         st = state or {}
         models = st.get("models") or {}
-        # andere sensor dan waarmee geleerd is: opnieuw beginnen
-        self.models = {k: RoomModel(models.get(k) if (models.get(k) or {}).get("sensor", r.sensor) == r.sensor
-                                    else None) for k, r in self.rooms.items()}
+        # opnieuw beginnen bij een andere sensor dan waarmee geleerd is, en (overgang vanaf versies die
+        # de sensor nog niet bewaarden) bij een model dat de kamer duidelijk slecht voorspelt
+        def keep(st: dict | None, sensor: str) -> dict | None:
+            if not st:
+                return None
+            if "sensor" in st:
+                return st if st["sensor"] == sensor else None
+            return None if (st.get("err") or 0) > 1.0 else st
+        self.models = {k: RoomModel(keep(models.get(k), r.sensor)) for k, r in self.rooms.items()}
         self.mode: dict[str, str] = {k: (st.get("mode") or {}).get(k, "heat") for k in self.rooms}
         self.manual: dict[str, tuple[float, float]] = {k: tuple(v) for k, v in (st.get("manual") or {}).items()
                                                        if k in self.rooms}

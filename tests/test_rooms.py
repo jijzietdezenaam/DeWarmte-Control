@@ -119,6 +119,9 @@ def test_quality_gate_sensor_reset_and_fans():
     assert fresh.models["climate.woonkamer"].n == 0 and fresh.models["climate.finn"].n == ctl.models["climate.finn"].n
     same = RoomController(cfgs(), st)
     assert same.models["climate.woonkamer"].n == 200
+    old = {"models": {k: {kk: vv for kk, vv in v.items() if kk != "sensor"} for k, v in st["models"].items()}}
+    mig = RoomController(cfgs(), old)                      # oude opslag zonder sensor: slecht model opnieuw
+    assert mig.models["climate.woonkamer"].n == 0 and mig.models["climate.finn"].n == ctl.models["climate.finn"].n
     t = {"climate.woonkamer": 20.5, "climate.finn": None}
     temps = {"climate.woonkamer": 20.0, "climate.finn": 19.0}
     with_fan = ctl.supply_need(t, 0.0, 28.0, temps, 1e9, {"climate.woonkamer"})["supply"]
