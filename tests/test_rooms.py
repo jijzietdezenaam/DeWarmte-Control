@@ -133,6 +133,28 @@ def test_quality_gate_sensor_reset_and_fans():
     assert ctl.supply_need(t, 0.0, 28.0, temps, 1e9, set())["supply"] is None
 
 
+
+def test_no_overshoot_cycles_with_slow_radiator():
+    """Radiator met 30 min vertraging en een model dat de afgifte onderschat: geen schommel-cyclus."""
+    for true in (dict(a=0.20, b=0.07, d=0.3), dict(a=0.12, b=0.06, d=0.2)):
+        cfg = RoomCfg("climate.x", "X", "s", "c", "o", "cl", 19, 18)
+        ctl = RoomController([cfg])
+        T, rad, ts, to, temps = 17.0, 0.0, 34.0, 0.0, []
+        for step in range(30 * 60):
+            wall = 1.8e9 + step * 60
+            ctl.observe("climate.x", wall, round(T, 2), to, ts, True)
+            d = ctl.decide("climate.x", wall, round(T, 2), 19.0, to, ts, True)
+            if d["write"]:
+                ctl.wrote_valve("climate.x", d["u"], wall)
+            u = ctl.state["climate.x"].u or 0
+            rad += (u * max(0, ts - T) - rad) * (1 - math.exp(-1 / 30))
+            T += (true["a"] * rad - true["b"] * (T - to) + true["d"]) / 60
+            temps.append(T)
+        late = temps[20 * 60:]
+        print(f"  a={true['a']}: max boven doel {max(temps) - 19:+.2f} K, schommeling laatste 10u {max(late) - min(late):.2f} K")
+        assert max(temps) - 19 < 0.7 and max(late) - min(late) < 0.45, true
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

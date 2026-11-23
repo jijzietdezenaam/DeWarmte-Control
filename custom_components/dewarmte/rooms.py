@@ -165,15 +165,18 @@ class RoomState:
     last_step: float | None = None
     reason: str = "start"
     tr_f: float | None = None                # gefilterde kamertemperatuur (tegen 0,1 K-sprongen)
+    rate: float = 0.0                        # temperatuurverloop (K/u), gefilterd
     trv_ok: bool = True
 
 
 @dataclass
 class RoomSettings:
     u_design: float = 0.85         # aanvoer zo kiezen dat de moeilijkste kamer hier uitkomt
-    kp: float = 2.0                # K/u extra afgifte per K tekort
-    ki: float = 0.30               # klepfractie per K·uur
-    full_open_k: float = 0.8       # zoveel te koud: klep volledig open
+    kp: float = 1.2                # K/u extra afgifte per K (verwacht) tekort
+    ki: float = 0.08               # klepfractie per K·uur (traag: radiatoren reageren met ~30 min vertraging)
+    full_open_k: float = 1.2       # zoveel te koud: klep volledig open
+    lead_h: float = 0.5            # vooruitkijken: regelen op de verwachte temperatuur over een half uur
+    i_leak_h: float = 0.0          # I-term lekt weg met deze tijdconstante (uur, 0 = niet)
     i_max: float = 0.30
     min_open: float = 0.10         # kleiner dan dit: dicht (voorkomt druppelen en pendelen)
     write_step: float = 0.10       # pas schrijven bij ≥ 10 % verschil (spaart TRV-batterijen)
@@ -266,8 +269,12 @@ class RoomController:
         dt_h = 0.0 if rs.last_step is None else _clip((wall - rs.last_step) / 3600, 0.0, 0.1)
         rs.last_step = wall
         if tr is not None:
+            prev = rs.tr_f
             rs.tr_f = tr if rs.tr_f is None or abs(tr - rs.tr_f) > 1.0 else rs.tr_f + (
                 1 - math.exp(-dt_h * 6)) * (tr - rs.tr_f)                  # tijdconstante 10 min
+            if prev is not None and dt_h > 0 and abs(tr - prev) <= 1.0:
+                inst = _clip((rs.tr_f - prev) / dt_h, -3.0, 3.0)
+                rs.rate += (1 - math.exp(-dt_h * 2)) * (inst - rs.rate)    # tijdconstante 30 min
         force = False
         if tr is None:
             u, why = (rs.u if rs.u is not None else 0.5), "geen kamertemperatuur: klep ongewijzigd"
@@ -284,16 +291,21 @@ class RoomController:
             to_ = to if to is not None else 5.0
             ts_ = ts if ts is not None else 35.0
             err = target - (rs.tr_f if rs.tr_f is not None else tr)
-            need = m.steady_need(target, to_) + s.kp * err
+            err_p = err - _clip(rs.rate, -2.0, 2.0) * s.lead_h            # verwacht tekort (dempt doorschieten)
+            need = m.steady_need(target, to_) + s.kp * err_p
             cap = m.capacity(rs.fan if cfg.fan else 0.0, ts_, tr)
             base = 1.0 if cap < 0.05 else need / cap
             u = base + rs.integ
-            if 0.0 < u < 1.0 and flowing:                              # anti-windup: alleen integreren binnen bereik
-                rs.integ = _clip(rs.integ + s.ki * err * dt_h, -s.i_max, s.i_max)
+            full = target - tr >= s.full_open_k
+            # anti-windup: alleen integreren als de klep echt geregeld wordt (niet bij vol open/dicht)
+            if 0.0 < u < 1.0 and flowing and not full:
+                rs.integ = _clip(rs.integ + s.ki * err_p * dt_h, -s.i_max, s.i_max)
+            if s.i_leak_h > 0:
+                rs.integ *= math.exp(-dt_h / s.i_leak_h)
             u = _clip(u, 0.0, 1.0)
             why = (f"nodig {max(0.0, need):.2f} K/u, max {cap:.2f} K/u bij {ts_:.0f} °C"
                    f" → {u:.0%} (I {rs.integ:+.0%})")
-            if target - tr >= s.full_open_k:
+            if full:
                 u, force, why = 1.0, True, f"{target - tr:.1f} K te koud: klep open"
             if u < s.min_open:
                 u = 0.0

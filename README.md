@@ -316,3 +316,14 @@ Het volledige rapport blijft in de HA-meldingen en in de sensor *Laatste uurrapp
   betrouwbaar zijn (≥ 50 % geleerd). Een kamer met een onbetrouwbaar model zet de aanvoer niet meer
   terug op de stooklijn. Die kamer wordt bijgestuurd via de klep en de klepbijsturing.
 - **Nieuwe optie "Niemand thuis: kamers zoveel lager (K)"** (standaard 1).
+
+## Nieuw in 3.7.2: minder doorschieten
+- **Geen windup meer:** de I-term bouwde op terwijl de klep geforceerd volledig open stond. Daardoor
+  schoot de kamer daarna 0,5–1 K door, koelde af en schoot opnieuw door. De I-term integreert nu
+  alleen als de klep echt geregeld wordt.
+- **Vooruitkijken:** de regeling kijkt een half uur vooruit op het temperatuurverloop. Stijgt de
+  kamer snel richting het doel, dan gaat de klep al eerder dicht.
+- **Rustiger bijsturen:** P 1,2, I 0,08. De radiatoren reageren met ongeveer een halfuur vertraging.
+  Volledig open pas bij ≥ 1,2 K tekort.
+- **In de simulatie:** met een trage radiator ging de schommeling van 0,7 K naar < 0,1 K, en het
+  doorschieten van 0,9 K naar 0,4 K.
