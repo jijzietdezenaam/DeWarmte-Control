@@ -307,3 +307,12 @@ Het volledige rapport blijft in de HA-meldingen en in de sensor *Laatste uurrapp
 - **Nieuw model bij een andere sensor:** krijgt een kamer een andere sensor, dan begint het model
   voor die kamer opnieuw.
 - **Alleen werkende fans:** radiatorfans tellen alleen mee in de aanvoerberekening als ze echt werken.
+
+## Nieuw in 3.7.1
+- **Boost alleen bij echt kamertekort.** Een kamer moet minstens 1,5 K onder zijn gewone doel zitten
+  (zonder prijsverhoging), en dat al 2 uur lang. Daarnaast blijft gelden dat de aanvoer zijn doel niet
+  haalt. Is het tekort weer kleiner dan 1 K, dan gaat Boost meteen terug naar Normaal.
+- **Aanvoer alleen op betrouwbare modellen.** De aanvoer wordt berekend met alleen de kamermodellen die
+  betrouwbaar zijn (≥ 50 % geleerd). Een kamer met een onbetrouwbaar model zet de aanvoer niet meer
+  terug op de stooklijn. Die kamer wordt bijgestuurd via de klep en de klepbijsturing.
+- **Nieuwe optie "Niemand thuis: kamers zoveel lager (K)"** (standaard 1).

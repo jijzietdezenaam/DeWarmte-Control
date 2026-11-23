@@ -164,12 +164,18 @@ def test_silent_above_3_even_with_shortfall():
 def test_cold_escalates_then_deescalates():
     e = eng.Engine(eng.Settings())
     seen = []
-    for t in range(0, 7200, 30):                          # aanhoudend tekort van >3 K bij -5 °C
+    for t in range(0, 10800, 30):                         # aanhoudend tekort van >3 K bij -5 °C, kamers 2 K te koud
         seen.append(e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), t_supply=27))["power_mode_desired"])
     assert eng.NORMAL in seen and seen[-1] == eng.BOOST
-    for t in range(7200, 12000, 30):                      # setpoint gehaald: terug naar Normaal (bodem bij kou)
+    for t in range(10800, 15600, 30):                      # setpoint gehaald: terug naar Normaal (bodem bij kou)
         d = e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), f_comp=30, t_supply=40))
     assert d["power_mode_desired"] == eng.NORMAL
+
+def test_no_boost_without_real_room_deficit():
+    e = eng.Engine(eng.Settings())
+    for t in range(0, 14400, 30):                         # aanvoer haalt doel niet, kamers maar 0,8 K te koud
+        d = e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 20.2, 21), t_supply=27))
+        assert d["power_mode_desired"] != eng.BOOST
 
 def test_cold_starts_normal_and_stays_normal():
     e = eng.Engine(eng.Settings())
@@ -180,10 +186,10 @@ def test_cold_starts_normal_and_stays_normal():
 def test_cold_old_behaviour_when_disabled():
     e = eng.Engine(eng.Settings(normal_when_cold=0.0))
     seen = []
-    for t in range(0, 7200, 30):
+    for t in range(0, 10800, 30):
         seen.append(e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), t_supply=27))["power_mode_desired"])
     assert seen[0] == eng.SILENT and seen[-1] == eng.BOOST
-    for t in range(7200, 12000, 30):
+    for t in range(10800, 15600, 30):
         d = e.update(inp(t, outdoor=-5.0, rooms=rooms(80, 19, 21), f_comp=30, t_supply=40))
     assert d["power_mode_desired"] == eng.SILENT
 

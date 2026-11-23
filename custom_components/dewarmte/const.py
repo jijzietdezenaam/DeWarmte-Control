@@ -1,6 +1,6 @@
 """Constanten (geen Home Assistant-imports, zodat ze ook los te testen zijn)."""
 DOMAIN = "dewarmte"
-VERSION = "3.7.0"
+VERSION = "3.7.1"
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "number", "datetime", "climate"]
 
 CONF_UP_TOPIC = "up_topic"
@@ -54,6 +54,7 @@ PLAN_FIELDS = {
     "gain": (0.5, 6, 0.5, "Prijsslim: gevoeligheid voor prijsverschil", "Price: sensitivity to price difference"),
     "hold_min": (15, 180, 15, "Prijsslim: minimale duur van een kamerdoel (min)", "Price: minimum hold of a room target (min)"),
     "room_max": (15, 25, 0.5, "Absoluut maximum kamerdoel voor gekozen kamers (°C)", "Absolute maximum room target for selected rooms (°C)"),
+    "away_drop": (0, 4, 0.5, "Niemand thuis: kamers zoveel lager (K)", "Nobody home: rooms this much lower (K)"),
     "vacation_room": (10, 20, 0.5, "Vakantiemodus: kamerdoel (°C)", "Vacation mode: room target (°C)"),
     "vacation_preheat_h": (0, 24, 1, "Vakantiemodus: zoveel uur vóór terugkomst opwarmen", "Vacation mode: preheat hours before return"),
 }

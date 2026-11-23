@@ -85,7 +85,8 @@
           "dhw_usage_temp": "DHW top minimum at learned usage times (°C, 0 = off)",
           "cold_alert_exclude": "Rooms without 'stays too cold' alert (e.g. toilet)",
           "max_temp_rooms": "Rooms with an absolute maximum (e.g. bedrooms)",
-          "room_control_config": "Self-learning room control, one line per room: room id | name | room sensor | TRV climate | number valve opening | number valve closing | day °C | night °C | fan (optional)"
+          "room_control_config": "Self-learning room control, one line per room: room id | name | room sensor | TRV climate | number valve opening | number valve closing | day °C | night °C | fan (optional)",
+          "away_drop": "Nobody home: rooms this much lower (K)"
         }
       }
     }

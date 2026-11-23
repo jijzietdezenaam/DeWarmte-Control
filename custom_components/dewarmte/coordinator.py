@@ -978,7 +978,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         if man:
             self.rooms_ctl.manual.pop(key, None)
         presets = {"comfort_temp": cfg.day, "eco_temp": cfg.night,
-                   "comfort_away_temp": cfg.day - 1, "eco_away_temp": cfg.night - 1}
+                   "comfort_away_temp": cfg.day - p.s.away_drop, "eco_away_temp": cfg.night - p.s.away_drop}
         return p.room_target(key, presets, home, now, None, offset=p.offset if self._plan_active() else 0.0)
 
     async def _room_step(self, v: dict) -> None:

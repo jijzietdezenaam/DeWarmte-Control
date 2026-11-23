@@ -37,6 +37,7 @@ class PlanSettings:
     room_max: float = 20.0          # absoluut maximum kamerdoel voor de kamers in PricePlanner.capped
     vacation_room: float = 17.0     # kamerdoel tijdens vakantiemodus
     vacation_preheat_h: float = 6.0 # zoveel uur vóór terugkomst weer normaal regelen (huis + boiler opwarmen)
+    away_drop: float = 1.0          # zoveel K lager als er niemand thuis is (DeWarmte-thermostaten)
 
     @classmethod
     def from_dict(cls, d: dict) -> "PlanSettings":

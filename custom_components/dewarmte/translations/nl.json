@@ -85,7 +85,8 @@
           "dhw_usage_temp": "Tapwater boven minimaal op geleerde tapmomenten (°C, 0 = uit)",
           "cold_alert_exclude": "Kamers zonder melding 'blijft te koud' (bijv. toilet)",
           "max_temp_rooms": "Kamers met een absoluut maximum (bijv. slaapkamers)",
-          "room_control_config": "Zelflerende kamerregeling, één regel per kamer: kamer-id | naam | kamersensor | TRV-climate | number klep-opening | number klep-sluiting | dag °C | nacht °C | fan (optioneel). Voorbeeld: climate.woonkamer_2 | Woonkamer | sensor.woonkamer_temp | climate.woonkamer_trv | number.trv_valve_opening_degree | number.trv_valve_closing_degree | 20,5 | 19 | fan.jaga"
+          "room_control_config": "Zelflerende kamerregeling, één regel per kamer: kamer-id | naam | kamersensor | TRV-climate | number klep-opening | number klep-sluiting | dag °C | nacht °C | fan (optioneel). Voorbeeld: climate.woonkamer_2 | Woonkamer | sensor.woonkamer_temp | climate.woonkamer_trv | number.trv_valve_opening_degree | number.trv_valve_closing_degree | 20,5 | 19 | fan.jaga",
+          "away_drop": "Niemand thuis: kamers zoveel lager (K)"
         }
       }
     }

@@ -29,7 +29,8 @@ def simulate(days=4, seed=1, window_at=None):
         curve = 37 - 0.5 * to
         need = ctl.supply_need(targets, to, curve, meas, wall)
         w = need["weight"]
-        ts += 0.05 * ((curve + w * (need["supply"] - curve)) - ts)
+        model = need["supply"] if need["supply"] is not None else curve
+        ts += 0.05 * ((curve + w * (model - curve)) - ts)
         for k, c in ctl.rooms.items():
             ctl.observe(k, wall, meas[k], to, ts, True)
             d = ctl.decide(k, wall, meas[k], targets[k], to, ts, True)
@@ -122,11 +123,14 @@ def test_quality_gate_sensor_reset_and_fans():
     old = {"models": {k: {kk: vv for kk, vv in v.items() if kk != "sensor"} for k, v in st["models"].items()}}
     mig = RoomController(cfgs(), old)                      # oude opslag zonder sensor: slecht model opnieuw
     assert mig.models["climate.woonkamer"].n == 0 and mig.models["climate.finn"].n == ctl.models["climate.finn"].n
+    m.err = 0.2                                            # betrouwbaar model voor de aanvoerberekening
     t = {"climate.woonkamer": 20.5, "climate.finn": None}
     temps = {"climate.woonkamer": 20.0, "climate.finn": 19.0}
     with_fan = ctl.supply_need(t, 0.0, 28.0, temps, 1e9, {"climate.woonkamer"})["supply"]
     no_fan = ctl.supply_need(t, 0.0, 28.0, temps, 1e9, set())["supply"]
     assert no_fan > with_fan, (no_fan, with_fan)
+    m.err = 1.4                                            # onbetrouwbaar: telt niet mee voor de aanvoer
+    assert ctl.supply_need(t, 0.0, 28.0, temps, 1e9, set())["supply"] is None
 
 
 if __name__ == "__main__":

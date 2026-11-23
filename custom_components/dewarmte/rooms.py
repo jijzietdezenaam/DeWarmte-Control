@@ -335,6 +335,8 @@ class RoomController:
             if (target is None or self.mode.get(key) == "off" or temps.get(key) is None
                     or wall < rs.window_until):
                 continue
+            if m.confidence < 0.5:
+                continue        # onbetrouwbaar model: die kamer wordt bijgestuurd via klep/klepbijsturing
             fan = s.fan_max if cfg.fan and (fans_ok is None or key in fans_ok) else 0.0   # alleen werkende fans
             need = m.steady_need(target, to)
             a, af, _, _ = m.eff()
@@ -348,6 +350,7 @@ class RoomController:
         if best is None:
             return {"supply": None, "weight": 0.0, "room": None}
         ts = _clip(best[0], curve - s.supply_down, curve + s.supply_up)
-        weights = [self.models[k].confidence for k in targets if targets[k] is not None]
+        weights = [self.models[k].confidence for k in targets
+                   if targets[k] is not None and self.models[k].confidence >= 0.5]
         weight = min(best[2], sum(weights) / len(weights)) if weights else 0.0
         return {"supply": round(ts, 1), "weight": round(weight, 2), "room": best[1]}

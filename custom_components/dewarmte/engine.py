@@ -63,6 +63,8 @@ class Settings:
     shortfall_boost_k: float = 3.0
     shortfall_boost_min: float = 15.0
     deescalate_k: float = 0.5
+    boost_room_k: float = 1.5               # Boost alleen als een kamer zoveel onder het gewone doel zit
+    boost_room_min: float = 120.0           # en dat zo lang al
     deescalate_min: float = 20.0
     mode_hold_min: float = 20.0
     # leren: de offset neemt langdurige bijsturing over (symmetrisch, traag, begrensd)
@@ -277,7 +279,8 @@ class Engine:
         shortfall = (target - ref) if (target is not None and ref is not None and running) else None
         # voorverwarmen op goedkope stroom mag nooit tot opschalen (Boost) leiden
         mode_short = None if shortfall is None else shortfall - max(0.0, inp.price_supply_lift or 0.0)
-        mode, mode_reason = self._power_mode(ta, mode_short, now)
+        room_short = worst - max(0.0, inp.plan_offset or 0.0)     # kamertekort t.o.v. het gewone doel
+        mode, mode_reason = self._power_mode(ta, mode_short, now, room_short)
 
         # voorgenomen writes (nooit uitgevoerd in fase 1)
         blocks: list[str] = []
@@ -406,7 +409,8 @@ class Engine:
             self.offset = max(-s.offset_limit, self.offset - s.offset_step)
             self.trim = min(s.trim_max, self.trim + s.offset_step)
 
-    def _power_mode(self, ta: float | None, shortfall: float | None, now: float) -> tuple[int, str]:
+    def _power_mode(self, ta: float | None, shortfall: float | None, now: float,
+                    room_short: float = 0.0) -> tuple[int, str]:
         s = self.s
         if ta is not None:
             if ta > s.silent_above:
@@ -428,7 +432,11 @@ class Engine:
         if self._idx == 0 and self._held("up1", has and shortfall >= s.shortfall_normal_k, now, s.shortfall_normal_min) and hold_ok:
             self._idx, self._mode_changed = 1, now
             self._t.clear()
-        elif self._idx == 1 and self._held("up2", has and shortfall >= s.shortfall_boost_k, now, s.shortfall_boost_min) and hold_ok:
+        room_cold = self._held("room", room_short >= s.boost_room_k, now, s.boost_room_min)
+        if self._idx == 2 and room_short < s.boost_room_k - 0.5 and hold_ok:
+            self._idx, self._mode_changed = 1, now                 # kamers weer bijna op doel: geen Boost meer
+            self._t.clear()
+        elif self._idx == 1 and room_cold and self._held("up2", has and shortfall >= s.shortfall_boost_k, now, s.shortfall_boost_min) and hold_ok:
             self._idx, self._mode_changed = 2, now
             self._t.clear()
         elif self._idx > floor and self._held("down", has and shortfall <= s.deescalate_k, now, s.deescalate_min) and hold_ok:
