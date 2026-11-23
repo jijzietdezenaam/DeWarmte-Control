@@ -151,6 +151,7 @@ class Inputs:
     vacation: bool = False                  # vakantiemodus actief: vast tapwatersetpoint, geen tapmomenten
     supply_model: float | None = None       # aanvoer volgens het geleerde kamermodel (kamerregeling)
     supply_weight: float = 0.0              # 0..1: hoeveel het kamermodel meetelt t.o.v. de stooklijn
+    price_supply_lift: float = 0.0          # K aanvoer die alleen door voorverwarmen op prijs komt
     critical_ok: bool = False
 
 
@@ -229,6 +230,7 @@ class Engine:
         ff = self._feedforward(valid, now)
         if inp.plan_offset is not None:       # planner stuurt de kamers: aanvoer gaat direct mee
             ff = max(-s.ff_max, min(s.ff_max, s.ff_k * inp.plan_offset))
+            inp.price_supply_lift = max(inp.price_supply_lift or 0.0, ff)
 
         # tapwater / bronondersteuning Pomp T
         source_support = bool(
@@ -273,7 +275,9 @@ class Engine:
         ref = inp.t_supply if s.setpoint_basis == "supply" else inp.t_return
         running = inp.f_comp is not None and inp.f_comp > 0
         shortfall = (target - ref) if (target is not None and ref is not None and running) else None
-        mode, mode_reason = self._power_mode(ta, shortfall, now)
+        # voorverwarmen op goedkope stroom mag nooit tot opschalen (Boost) leiden
+        mode_short = None if shortfall is None else shortfall - max(0.0, inp.price_supply_lift or 0.0)
+        mode, mode_reason = self._power_mode(ta, mode_short, now)
 
         # voorgenomen writes (nooit uitgevoerd in fase 1)
         blocks: list[str] = []

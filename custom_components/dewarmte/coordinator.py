@@ -1000,6 +1000,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         targets: dict[str, float | None] = {}
         temps: dict[str, float | None] = {}
         jobs: list[tuple] = []
+        fans_ok: set[str] = set()
         for cfg in self.room_cfgs:
             key, rs = cfg.key, ctl.state[cfg.key]
             trv = self.hass.states.get(cfg.trv)
@@ -1013,6 +1014,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 rs.fan = (pct or 0) / 100 if fan_st.state == "on" else 0.0
             elif cfg.fan:
                 rs.fan = 0.0
+            if fan_ok:
+                fans_ok.add(cfg.key)
             opening, closing = self._num(cfg.opening), self._num(cfg.closing)
             if not active:
                 # meekijken en leren met de kleppen die VTherm/de TRV zelf stuurt
@@ -1059,7 +1062,10 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             # TRV's/fans op de achtergrond aansturen: een Zigbee-TRV die niet antwoordt mag de
             # warmtepompregeling niet ophouden (ZHA wacht soms tientallen seconden per poging).
             self._room_task = self.hass.async_create_task(self._room_io_all(jobs, now), "dewarmte_kamers")
-        need = ctl.supply_need(targets, to, curve, temps, now)
+        # aanvoer kiezen op het gewone kamerdoel: voorverwarmen op prijs loopt via de feedforward
+        lift = max(0.0, self.planner.offset if self._plan_active() else 0.0)
+        base_targets = {k: (None if t is None else t - lift) for k, t in targets.items()}
+        need = ctl.supply_need(base_targets, to, curve, temps, now, fans_ok)
         if active and need["supply"] is not None:
             # traag volgen (tijdconstante 30 min), zodat de aanvoer niet springt
             if self._supply_ema is None or self._supply_t is None:

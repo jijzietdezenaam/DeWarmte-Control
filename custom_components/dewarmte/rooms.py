@@ -93,8 +93,11 @@ class RoomModel:
 
     @property
     def confidence(self) -> float:
-        """0 = alleen standaardwaarden, 1 = ruim 12 uur aan metingen met warmteafgifte."""
-        return _clip(self.n / 72, 0.0, 1.0)
+        """0 = alleen standaardwaarden, 1 = ruim 12 uur aan metingen met warmteafgifte én een model dat
+        de kamer goed voorspelt. Voorspelt het slecht (bijv. een sensor die zelden meldt), dan telt het
+        geleerde model minder of niet mee en regelt DeWarmte met standaardwaarden + bijsturing."""
+        quality = 1.0 if self.err is None else _clip((1.0 - self.err) / 0.5, 0.0, 1.0)
+        return _clip(self.n / 72, 0.0, 1.0) * quality
 
     @staticmethod
     def features(u: float, fan: float, ts: float, tr: float, to: float, flowing: float) -> list[float]:
@@ -196,14 +199,17 @@ class RoomController:
         self.rooms = {r.key: r for r in rooms}
         st = state or {}
         models = st.get("models") or {}
-        self.models = {k: RoomModel(models.get(k)) for k in self.rooms}
+        # andere sensor dan waarmee geleerd is: opnieuw beginnen
+        self.models = {k: RoomModel(models.get(k) if (models.get(k) or {}).get("sensor", r.sensor) == r.sensor
+                                    else None) for k, r in self.rooms.items()}
         self.mode: dict[str, str] = {k: (st.get("mode") or {}).get(k, "heat") for k in self.rooms}
         self.manual: dict[str, tuple[float, float]] = {k: tuple(v) for k, v in (st.get("manual") or {}).items()
                                                        if k in self.rooms}
         self.state = {k: RoomState(integ=float((st.get("integ") or {}).get(k, 0.0))) for k in self.rooms}
 
     def export_state(self) -> dict:
-        return {"models": {k: m.export() for k, m in self.models.items()}, "mode": self.mode,
+        return {"models": {k: {**m.export(), "sensor": self.rooms[k].sensor} for k, m in self.models.items()},
+                "mode": self.mode,
                 "manual": {k: list(v) for k, v in self.manual.items()},
                 "integ": {k: round(s.integ, 3) for k, s in self.state.items()}}
 
@@ -312,7 +318,7 @@ class RoomController:
 
     # ------------------------------------------------------------ aanvoer
     def supply_need(self, targets: dict[str, float | None], to: float | None, curve: float,
-                    temps: dict[str, float | None], wall: float) -> dict:
+                    temps: dict[str, float | None], wall: float, fans_ok: set[str] | None = None) -> dict:
         """Laagste aanvoer waarbij elke kamer zijn doel haalt met de klep op u_design."""
         s = self.s
         if to is None:
@@ -323,7 +329,7 @@ class RoomController:
             if (target is None or self.mode.get(key) == "off" or temps.get(key) is None
                     or wall < rs.window_until):
                 continue
-            fan = s.fan_max if cfg.fan else 0.0
+            fan = s.fan_max if cfg.fan and (fans_ok is None or key in fans_ok) else 0.0   # alleen werkende fans
             need = m.steady_need(target, to)
             a, af, _, _ = m.eff()
             per_k = (a + af * fan) * s.u_design

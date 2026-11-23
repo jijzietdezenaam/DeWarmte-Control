@@ -295,3 +295,15 @@ Op de telefoon alleen nog een kort bericht als er iets mis is:
 
 Het volledige rapport blijft in de HA-meldingen en in de sensor *Laatste uurrapport* staan. De knop
 *Uurrapport nu versturen* stuurt het altijd.
+
+## Nieuw in 3.7.0: zuiniger bij kou
+- **Boost niet meer door voorverwarmen:** voorverwarmen op goedkope stroom leidt nooit meer tot
+  opschalen naar Boost. Het opschalen kijkt alleen naar het aanvoertekort zonder de prijsverhoging.
+- **Aanvoer op het gewone doel:** de aanvoer van het kamermodel wordt gekozen op het gewone
+  kamerdoel, zonder prijsverhoging. Voorverwarmen gaat alleen via de kleine feedforward.
+- **Kwaliteitscontrole van het model:** een kamermodel dat slecht voorspelt (voorspelfout boven
+  0,5 K/u, bij 1 K/u niet meer) telt minder of niet mee. DeWarmte regelt die kamer dan met
+  standaardwaarden en bijsturing.
+- **Nieuw model bij een andere sensor:** krijgt een kamer een andere sensor, dan begint het model
+  voor die kamer opnieuw.
+- **Alleen werkende fans:** radiatorfans tellen alleen mee in de aanvoerberekening als ze echt werken.

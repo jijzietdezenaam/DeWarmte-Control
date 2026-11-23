@@ -105,6 +105,27 @@ def test_overheat_and_off_and_parse():
     assert rows[0].day == 20.5
 
 
+
+def test_quality_gate_sensor_reset_and_fans():
+    ctl = RoomController(cfgs())
+    m = ctl.models["climate.woonkamer"]
+    m.n, m.err = 200, 0.2
+    assert m.confidence == 1.0
+    m.err = 1.4                                            # voorspelt slecht: standaardwaarden
+    assert m.confidence == 0.0 and m.eff()[0] == 0.10
+    st = ctl.export_state()
+    other = cfgs(); other[0].sensor = "sensor.nieuw"
+    fresh = RoomController(other, st)
+    assert fresh.models["climate.woonkamer"].n == 0 and fresh.models["climate.finn"].n == ctl.models["climate.finn"].n
+    same = RoomController(cfgs(), st)
+    assert same.models["climate.woonkamer"].n == 200
+    t = {"climate.woonkamer": 20.5, "climate.finn": None}
+    temps = {"climate.woonkamer": 20.0, "climate.finn": 19.0}
+    with_fan = ctl.supply_need(t, 0.0, 28.0, temps, 1e9, {"climate.woonkamer"})["supply"]
+    no_fan = ctl.supply_need(t, 0.0, 28.0, temps, 1e9, set())["supply"]
+    assert no_fan > with_fan, (no_fan, with_fan)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
