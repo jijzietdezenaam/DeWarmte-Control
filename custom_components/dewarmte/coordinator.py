@@ -1001,6 +1001,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         temps: dict[str, float | None] = {}
         jobs: list[tuple] = []
         fans_ok: set[str] = set()
+        ctl.set_defrost(bool(v.get("defrost")) if v else False, now)
         for cfg in self.room_cfgs:
             key, rs = cfg.key, ctl.state[cfg.key]
             trv = self.hass.states.get(cfg.trv)

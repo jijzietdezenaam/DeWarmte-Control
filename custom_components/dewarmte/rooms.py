@@ -188,6 +188,7 @@ class RoomSettings:
     window_s: float = 1800.0
     overheat_k: float = 0.5
     frost: float = 7.0
+    defrost_hold_s: float = 1500.0 # na ontdooien zo lang (25 min) niet bijsturen: aanvoer moet nog herstellen
     supply_down: float = 6.0       # modelaanvoer max. zoveel onder de stooklijn
     supply_up: float = 3.0         # en max. zoveel erboven
 
@@ -199,6 +200,8 @@ class RoomController:
         # kamers die met de sensor in de TRV meten: die sensor koelt snel af als de klep dichtgaat,
         # dat lijkt op een open raam. Daar geen raamdetectie.
         self.no_window = set(no_window or ())
+        self.defrost_active = False
+        self.defrost_until = 0.0          # tot dan: ontdooien + herstel van de aanvoer, kleppen niet bijsturen
         self.rooms = {r.key: r for r in rooms}
         st = state or {}
         models = st.get("models") or {}
@@ -221,6 +224,13 @@ class RoomController:
                 "mode": self.mode,
                 "manual": {k: list(v) for k, v in self.manual.items()},
                 "integ": {k: round(s.integ, 3) for k, s in self.state.items()}}
+
+    def set_defrost(self, active: bool, wall: float) -> None:
+        """Tijdens ontdooien haalt de warmtepomp warmte uit het water; de kamers zakken kort iets.
+        Dat is tijdelijk: daarop niet bijsturen en er niet van leren."""
+        self.defrost_active = bool(active)
+        if active:
+            self.defrost_until = wall + self.s.defrost_hold_s
 
     # ------------------------------------------------------------ waarnemen en leren
     def observe(self, key: str, wall: float, tr: float | None, to: float | None, ts: float | None,
@@ -259,6 +269,8 @@ class RoomController:
         xs = [RoomModel.features(s[2], s[3], s[4], s[1], s[5], s[6]) for s in win]
         x = [sum(c) / len(xs) for c in zip(*xs)]
         rs.last_learn = wall
+        if self.defrost_active:
+            return                     # tijdens ontdooien niet leren
         m.update(x, y, self.rooms[key].fan is not None)
 
     # ------------------------------------------------------------ besluiten
@@ -268,11 +280,12 @@ class RoomController:
         s, rs, m, cfg = self.s, self.state[key], self.models[key], self.rooms[key]
         dt_h = 0.0 if rs.last_step is None else _clip((wall - rs.last_step) / 3600, 0.0, 0.1)
         rs.last_step = wall
+        hold = wall < self.defrost_until          # ontdooien of herstel: tijdelijke dip negeren
         if tr is not None:
             prev = rs.tr_f
             rs.tr_f = tr if rs.tr_f is None or abs(tr - rs.tr_f) > 1.0 else rs.tr_f + (
                 1 - math.exp(-dt_h * 6)) * (tr - rs.tr_f)                  # tijdconstante 10 min
-            if prev is not None and dt_h > 0 and abs(tr - prev) <= 1.0:
+            if prev is not None and dt_h > 0 and abs(tr - prev) <= 1.0 and not hold:
                 inst = _clip((rs.tr_f - prev) / dt_h, -3.0, 3.0)
                 rs.rate += (1 - math.exp(-dt_h * 2)) * (inst - rs.rate)    # tijdconstante 30 min
         force = False
@@ -298,7 +311,7 @@ class RoomController:
             u = base + rs.integ
             full = target - tr >= s.full_open_k
             # anti-windup: alleen integreren als de klep echt geregeld wordt (niet bij vol open/dicht)
-            if 0.0 < u < 1.0 and flowing and not full:
+            if 0.0 < u < 1.0 and flowing and not full and not hold:
                 rs.integ = _clip(rs.integ + s.ki * err_p * dt_h, -s.i_max, s.i_max)
             if s.i_leak_h > 0:
                 rs.integ *= math.exp(-dt_h / s.i_leak_h)
@@ -311,6 +324,8 @@ class RoomController:
                 u = 0.0
         u = round(u * 20) / 20                                          # stappen van 5 %
         rs.u_want, rs.reason = u, why
+        if hold and not force and rs.u is not None:
+            u, why = rs.u, "ontdooien: klep ongewijzigd (tijdelijke dip)"
         write = rs.u is None or (abs(u - rs.u) >= s.write_step - 1e-9 and (
             force or wall - rs.u_t >= s.write_min_s))
         if rs.u is not None and abs(u - rs.u) < 1e-9:

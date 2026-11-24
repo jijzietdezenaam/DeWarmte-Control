@@ -327,3 +327,12 @@ Het volledige rapport blijft in de HA-meldingen en in de sensor *Laatste uurrapp
   Volledig open pas bij ≥ 1,2 K tekort.
 - **In de simulatie:** met een trage radiator ging de schommeling van 0,7 K naar < 0,1 K, en het
   doorschieten van 0,9 K naar 0,4 K.
+
+## Nieuw in 3.7.3: ontdooien
+Tijdens het ontdooien, en 25 minuten daarna terwijl de aanvoer herstelt, gelden drie dingen:
+- de kleppen worden niet bijgestuurd op de tijdelijke temperatuurdip;
+- de I-term en het temperatuurverloop worden niet bijgewerkt;
+- het kamermodel leert niet zolang het ontdooien bezig is.
+
+Kamers die echt te koud worden (≥ 1,2 K), te warm zijn, een open raam hebben of uit staan, worden
+wel direct geregeld.

@@ -155,6 +155,25 @@ def test_no_overshoot_cycles_with_slow_radiator():
         assert max(temps) - 19 < 0.7 and max(late) - min(late) < 0.45, true
 
 
+
+def test_defrost_dip_ignored():
+    ctl = RoomController(cfgs())
+    k = "climate.finn"
+    wall = 1.9e9
+    for i in range(60):                                   # stabiel op doel, klep 40 %
+        ctl.decide(k, wall + i * 60, 19.0, 19.0, 0.0, 32.0, True)
+    ctl.wrote_valve(k, 0.4, wall)
+    w = wall + 3600
+    ctl.set_defrost(True, w)
+    d1 = ctl.decide(k, w + 60, 18.8, 19.0, 0.0, 32.0, True)
+    ctl.set_defrost(False, w + 400)
+    d2 = ctl.decide(k, w + 1200, 18.85, 19.0, 0.0, 32.0, True)   # nog in herstel
+    assert not d1["write"] and not d2["write"] and d1["u"] == 0.4, (d1, d2)
+    assert "ontdooien" in d1["why"]
+    d3 = ctl.decide(k, w + 1600, 17.5, 19.0, 0.0, 32.0, True)    # echt te koud: wel ingrijpen
+    assert d3["u"] == 1.0 and d3["write"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
