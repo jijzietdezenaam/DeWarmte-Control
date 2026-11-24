@@ -26,6 +26,7 @@ from .insights import Alerts, CycleCounter, DhwLearner, DhwSettings, WeekStats
 from .obslog import ObsLog
 from .planner import PlanSettings, PricePlanner
 from .report import HourReport
+from .copstats import CopStats
 from .rooms import RoomController, parse_room_config
 from .writes import WriteGuard
 
@@ -103,6 +104,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.supply_info: dict = {}
         self._trv_set: dict[str, float] = {}
         self._room_task = None
+        self.cop = CopStats()
 
     # ------------------------------------------------------------ levenscyclus
     async def async_setup(self) -> None:
@@ -119,6 +121,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.week = WeekStats(stored.get("week"))
         self.last_week = stored.get("last_week") or self.last_week
         self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"), no_window=set(self.cfg.get(CONF_TRV_ROOMS) or []))
+        self.cop = CopStats(stored.get("cop"))
         self.room_control = bool(stored.get("room_control", False)) and bool(self.room_cfgs)
         self._unsub = await mqtt.async_subscribe(
             self.hass, self.cfg[CONF_UP_TOPIC], self._on_message, 0, encoding=None)
@@ -186,7 +189,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 "vacation_on": self.vacation_on, "vacation_return": self.vacation_return,
                 "cycles": self.cycles.export_state(), "dhw": self.dhw.export_state(),
                 "week": self.week.export_state(), "last_week": self.last_week,
-                "rooms": self.rooms_ctl.export_state(), "room_control": self.room_control}
+                "rooms": self.rooms_ctl.export_state(), "room_control": self.room_control,
+                "cop": self.cop.export()}
 
     async def async_set_control(self, enabled: bool, reason: str | None = None) -> None:
         was = self.control_enabled
@@ -1106,6 +1110,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             self.service_until = 0.0
             _LOGGER.warning("Servicemodus automatisch UIT")
         self.report.sample(values, decision)
+        self.cop.update(values, bool(values.get("defrost")))
         self.report.sample_rooms(self.room_info if self.room_control else
                                  {r["id"]: r for r in self._room_rows()})
         self._last_values, self._last_decision = values, decision

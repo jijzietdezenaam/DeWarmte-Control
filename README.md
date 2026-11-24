@@ -336,3 +336,18 @@ Tijdens het ontdooien, en 25 minuten daarna terwijl de aanvoer herstelt, gelden 
 
 Kamers die echt te koud worden (≥ 1,2 K), te warm zijn, een open raam hebben of uit staan, worden
 wel direct geregeld.
+
+## Nieuw in 3.8.0: COP per week, maand, jaar en totaal
+Er zijn twaalf nieuwe sensoren: **COP pomp AO / pomp T / totaal**, elk voor **deze week, deze maand,
+dit jaar en totaal**.
+- **De waarde:** de COP *zonder* ontdooien. Stroom en warmte tijdens het ontdooien zelf (de 5–7 min dat
+  de unit ontdooit) tellen niet mee.
+- **Attributen:**
+  - `cop_met_ontdooien` en `ontdooiverlies_pct`;
+  - kWh stroom en warmte, ook apart voor het ontdooien;
+  - `vorige_periode` (bijvoorbeeld de COP van vorige maand);
+  - `sinds`.
+- **Wat niet meetelt:** stukken waarin de warmtemeter een foutcode geeft, en onlogische sprongen in de
+  meterstand.
+- **"Totaal" telt vanaf 3.8.0.** Eerdere periodes kunnen niet achteraf worden opgesplitst in met en
+  zonder ontdooien.

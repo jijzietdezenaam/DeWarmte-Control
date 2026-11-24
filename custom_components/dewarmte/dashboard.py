@@ -133,6 +133,12 @@ def build(r: Resolve, rooms: list[str], price_entity: str | None = None) -> dict
             tile(s("p_el_ao"), "Elektrisch"), tile(s("p_th_ao"), "Warmte"),
             tile(s("cop_ao"), "COP"), tile(s("run_state"), "Toestand")]},
         {"type": "grid", "cards": [
+            {"type": "heading", "heading": "COP zonder ontdooien"},
+            tile(s("cop_ao_week"), "AO week"), tile(s("cop_ao_month"), "AO maand"),
+            tile(s("cop_ao_year"), "AO jaar"), tile(s("cop_ao_lifetime"), "AO totaal"),
+            tile(s("cop_pt_month"), "Pomp T maand"), tile(s("cop_pt_year"), "Pomp T jaar"),
+            tile(s("cop_total_month"), "Totaal maand"), tile(s("cop_total_year"), "Totaal jaar")]},
+        {"type": "grid", "cards": [
             {"type": "heading", "heading": "Meldingen"},
             {**report_md, "grid_options": {"columns": "full"}},
             {**actions_md, "grid_options": {"columns": "full"}},

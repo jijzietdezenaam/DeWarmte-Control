@@ -208,6 +208,11 @@ async def main():
     await timers[0][0]()
     rep = [x for x in notes if x[0] == "dewarmte_uurrapport"][-1]
     assert "aanvoersetpoint" in rep[2] and Hass.services.calls[-1][1] == "mobile_app_test", Hass.services.calls
+    c.data = data; cops = [sens.DWSensorEntity(c, Entry(), d_) for d_ in sens.COP_SENSORS]
+    assert len(cops) == 12 and cops[0]._attr_unique_id == "abc_cop_ao_week"
+    for e_ in cops:
+        e_.native_value; e_.extra_state_attributes                       # mag niet crashen
+    assert c.cop.last.get("ao") is not None or c._last_values.get("ao_pm_energy") is None
     raw_s = [r for r in regs.RAW if r.bit is None or isinstance(r.bit, str)]; raw_b = [r for r in regs.RAW if isinstance(r.bit, int)]
     vals = data["v"]["raw"]
     assert vals["r1_80"] == 23 and vals["r1_0_12"] is True and vals["r2_53"] == 45
@@ -367,7 +372,7 @@ async def main():
     print("PASS uurrapport:", probs)
 
     # ---- dashboard: elke verwijzing moet naar een echte entiteit wijzen
-    ids = {("sensor", d.key) for d in sens.SENSORS + sens.EXTRA} | {("binary_sensor", d.key) for d in binm.BINARIES}
+    ids = {("sensor", d.key) for d in sens.SENSORS + sens.EXTRA + sens.COP_SENSORS} | {("binary_sensor", d.key) for d in binm.BINARIES}
     ids |= {("sensor", x.key) for x in regs.RAW if not isinstance(x.bit, int)} | {("binary_sensor", x.key) for x in regs.RAW if isinstance(x.bit, int)}
     ids |= {("switch", "control"), ("switch", "service_mode"), ("switch", "plan"), ("switch", "vacation"), ("switch", "room_control"), ("datetime", "vacation_return"), ("button", "report_now"), ("button", "disinfect_start"), ("button", "disinfect_stop"), ("button", "week_now"), ("button", "vent_start"), ("button", "vent_stop")}
     ids |= {("number", f"n{k[0]}_{k[1]}") for k in load("writes").SERVICE}

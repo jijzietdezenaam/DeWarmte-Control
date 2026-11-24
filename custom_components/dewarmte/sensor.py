@@ -14,6 +14,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, VERSION
+from .copstats import NAMES as PERIOD_NAMES, PERIODS as COP_PERIODS, SOURCES as COP_SOURCES, SRC_NAMES
 from .engine import MODE_NAMES
 from .registers import RAW, run_state_text
 
@@ -147,9 +148,23 @@ EXTRA: tuple[DWSensor, ...] = (
 )
 
 
+def _cop_value(src, period):
+    return lambda d: d["c"].cop.value(src, period)
+
+
+def _cop_attrs(src, period):
+    return lambda d: d["c"].cop.attrs(src, period)
+
+
+COP_SENSORS: tuple[DWSensor, ...] = tuple(
+    DWSensor(key=f"cop_{src}_{period}", name=f"COP {SRC_NAMES[src]} {PERIOD_NAMES[period]}", icon="mdi:speedometer",
+             state_class=M, value_fn=_cop_value(src, period), attrs_fn=_cop_attrs(src, period))
+    for src in COP_SOURCES for period in COP_PERIODS)
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list = [DWSensorEntity(coordinator, entry, desc) for desc in SENSORS + EXTRA]
+    entities: list = [DWSensorEntity(coordinator, entry, desc) for desc in SENSORS + EXTRA + COP_SENSORS]
     entities += [DWRawSensor(coordinator, entry, r) for r in RAW if r.bit is None or isinstance(r.bit, str)]
     async_add_entities(entities)
 
