@@ -351,3 +351,12 @@ dit jaar en totaal**.
   meterstand.
 - **"Totaal" telt vanaf 3.8.0.** Eerdere periodes kunnen niet achteraf worden opgesplitst in met en
   zonder ontdooien.
+
+## Nieuw in 3.8.1: uit als er niets te doen is
+- **Uitschakelen hangt aan de looptijd.** Is er geen warmtevraag meer, dan gaat de unit uit zodra de
+  compressor zijn minimale looptijd van 30 min heeft gehad. De vaste wachttijd van 45 min na het einde
+  van de warmtevraag is vervallen.
+- **Boven doel is geen warmtevraag.** Een kamer die meer dan 0,2 K boven zijn doel zit, telt niet als
+  warmtevraag, ook niet met een klep die (nog) open staat.
+- **Klep echt dicht boven doel.** De vasthoudwarmte van het kamermodel bouwt af boven het doel: bij
+  +0,4 K is ze 0. Daardoor gaat de klep echt dicht in plaats van op 20–30 % te blijven hangen.

@@ -187,6 +187,7 @@ class RoomSettings:
     window_drop_k: float = 0.8     # ≥ 0,8 K daling binnen 15 min (sensoren melden in stapjes, dus niet te gevoelig)
     window_s: float = 1800.0
     overheat_k: float = 0.5
+    ff_fade_k: float = 0.4         # boven doel: vasthoudwarmte lineair naar 0 over zoveel K
     frost: float = 7.0
     defrost_hold_s: float = 1500.0 # na ontdooien zo lang (25 min) niet bijsturen: aanvoer moet nog herstellen
     supply_down: float = 6.0       # modelaanvoer max. zoveel onder de stooklijn
@@ -305,7 +306,9 @@ class RoomController:
             ts_ = ts if ts is not None else 35.0
             err = target - (rs.tr_f if rs.tr_f is not None else tr)
             err_p = err - _clip(rs.rate, -2.0, 2.0) * s.lead_h            # verwacht tekort (dempt doorschieten)
-            need = m.steady_need(target, to_) + s.kp * err_p
+            # boven doel: de "vasthoud"-warmte afbouwen (bij +0,4 K niets meer), zodat de klep echt dichtgaat
+            ff = m.steady_need(target, to_) * _clip(1.0 + min(0.0, err) / s.ff_fade_k, 0.0, 1.0)
+            need = ff + s.kp * err_p
             cap = m.capacity(rs.fan if cfg.fan else 0.0, ts_, tr)
             base = 1.0 if cap < 0.05 else need / cap
             u = base + rs.integ

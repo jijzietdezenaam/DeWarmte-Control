@@ -45,6 +45,7 @@ class Settings:
     # vraagdetectie
     room_valve_on: float = 10.0
     room_valve_off: float = 3.0
+    room_above_k: float = 0.2               # kamer zoveel boven doel: telt niet als warmtevraag, ook niet met open klep
     room_deficit_on: float = 0.4
     room_deficit_off: float = 0.1
     demand_on_delay_s: float = 120.0
@@ -188,6 +189,7 @@ class Engine:
         self._offset_changed: float | None = None
         self._mode_changed: float | None = None
         self._unit_edge: float | None = None
+        self._run_since: float | None = None      # compressor draait sinds
         self._last_on: float | None = None
         self._dhw_target: float | None = None
         self._dhw_changed: float | None = None
@@ -223,9 +225,11 @@ class Engine:
         self._last_now = now
         eff = self._filter(valid, dt, now)
         valves = [r.valve for r in valid if r.valve is not None]
+        # alleen kleppen van kamers die niet (duidelijk) boven hun doel zitten tellen als warmtevraag
+        dvalves = [r.valve for r in valid if r.valve is not None and eff.get(r.name, 0.0) > -s.room_above_k]
         deficits = list(eff.values())
-        calling = any(v >= s.room_valve_on for v in valves) or any(d >= s.room_deficit_on for d in deficits)
-        holding = any(v > s.room_valve_off for v in valves) or any(d > s.room_deficit_off for d in deficits)
+        calling = any(v >= s.room_valve_on for v in dvalves) or any(d >= s.room_deficit_on for d in deficits)
+        holding = any(v > s.room_valve_off for v in dvalves) or any(d > s.room_deficit_off for d in deficits)
         self._update_demand(calling, holding, now)
         worst = max(deficits, default=0.0)
         level = (sum(valves) / len(valves)) if valves else None
@@ -266,7 +270,18 @@ class Engine:
         else:
             if self._no_want_since is None:
                 self._no_want_since = now
-            desired_on = False if now - self._no_want_since >= s.unit_off_delay_min * 60 else None
+            # uit zodra de compressor zijn minimale looptijd heeft gehad (niet: een vaste wachttijd na de vraag)
+            ran = 0.0 if self._run_since is None else now - self._run_since
+            if self._run_since is None or ran >= s.min_on_min * 60:
+                desired_on = False
+            else:
+                desired_on = None
+        if inp.f_comp is not None:
+            if inp.f_comp > 0:
+                if self._run_since is None:
+                    self._run_since = now
+            elif not inp.defrost:
+                self._run_since = None
         if inp.on_773 is not None:
             cur_on = bool(inp.on_773)
             if self._last_on is None or cur_on != self._last_on:

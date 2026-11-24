@@ -92,6 +92,35 @@ def inp(now, **kw):
                 on_773=0, set_769=25, power_775=2, critical_ok=True, dhw_top=45, dhw_set=45, price=0.25)
     base.update(kw); return eng.Inputs(**base)
 
+def test_room_above_target_is_no_demand():
+    e = eng.Engine(eng.Settings(keep_on_below=-10))
+    for t in range(0, 600, 30):                           # klep 30 % maar 0,5 K boven doel
+        d = e.update(inp(t, rooms=rooms(30, 21.0, 20.5)))
+    assert d["heat_demand"] is False
+    for t in range(600, 1200, 30):                        # onder doel met open klep: wel vraag
+        d = e.update(inp(t, rooms=rooms(30, 20.3, 20.5)))
+    assert d["heat_demand"] is True
+
+def test_unit_off_after_runtime_not_fixed_delay():
+    e = eng.Engine(eng.Settings(keep_on_below=-10))
+    for t in range(0, 7200, 30):                          # 2 uur warmtevraag, compressor draait
+        d = e.update(inp(t, rooms=rooms(60, 19.5, 20.5), on_773=1, f_comp=40))
+    off = None
+    for t in range(7200, 7200 + 3600, 30):                # alles op temperatuur
+        d = e.update(inp(t, rooms=rooms(0, 20.8, 20.5), on_773=1, f_comp=30))
+        if d["unit_on_desired"] is False:
+            off = t - 7200; break
+    assert off is not None and off <= 15 * 60, off        # binnen ~10 min (kamerfilter + vraag-debounce), niet na 45 min
+    e = eng.Engine(eng.Settings(keep_on_below=-10))       # kort gedraaid: eerst minimale looptijd vol maken
+    for t in range(0, 600, 30):
+        e.update(inp(t, rooms=rooms(60, 19.5, 20.5), on_773=1, f_comp=40))
+    off = None
+    for t in range(600, 4200, 30):
+        d = e.update(inp(t, rooms=rooms(0, 20.8, 20.5), on_773=1, f_comp=30))
+        if d["unit_on_desired"] is False:
+            off = t; break
+    assert off is not None and 29 * 60 <= off <= 32 * 60, off
+
 def test_demand_needs_delay_and_curve():
     e = eng.Engine(eng.Settings())
     assert e.update(inp(0))["heat_demand"] is False
