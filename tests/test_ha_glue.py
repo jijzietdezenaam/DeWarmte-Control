@@ -340,6 +340,9 @@ async def main():
     assert ents[0].available and ents[0].native_current_temperature == 19.6 and ents[0].hvac_action == "heating"
     assert ents[0].extra_state_attributes["valve_open_percent"] == wo
     assert c._room("climate.woonkamer").valve == wo
+    tgt = c.room_info["climate.woonkamer"]["target"]                       # TRV-setpoint ruim boven doel
+    assert ("climate", "set_temperature", {"entity_id": "climate.trv_w", "temperature": min(25.0, round((tgt + 4) * 2) / 2)}) \
+        in Hass.services.calls, [x for x in Hass.services.calls if x[1] == "set_temperature"]
     # handmatig: doel tot het volgende blok, max. 3 uur
     await ents[1].async_set_temperature(temperature=21.0); await settle()
     assert ents[1].preset_mode == "handmatig" and ents[1].native_target_temperature == 20.0   # slaapkamer-maximum 20
@@ -356,6 +359,8 @@ async def main():
     await c.async_set_room_control(False)
     assert h.states.d["number.w_open"].state == "100" and h.states.d["number.w_close"].state == "0"
     assert h.states.d["fan.jaga"].state == "off"
+    last = [x for x in Hass.services.calls if x[1] == "set_temperature" and x[2]["entity_id"] == "climate.trv_w"][-1]
+    assert last[2]["temperature"] == c.room_info["climate.woonkamer"]["target"], last   # teruggeven: kamerdoel
     print("PASS kamerregeling:", {k: (i["valve"], i["target"], i["valve_reason"][:40]) for k, i in c.room_info.items()})
 
     # ---- uurrapport: telefoon alleen bij problemen

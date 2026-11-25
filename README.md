@@ -352,6 +352,12 @@ dit jaar en totaal**.
 - **"Totaal" telt vanaf 3.8.0.** Eerdere periodes kunnen niet achteraf worden opgesplitst in met en
   zonder ontdooien.
 
+## Nieuw in 3.8.2: TRV knijpt de klep niet meer zelf dicht
+De Sonoff TRVZB heeft een eigen thermostaatje op zijn eigen sensor, vlak bij de radiator (1–2,5 °C te warm). Zodra die sensor het setpoint haalde, ging de TRV op "idle" en draaide hij de klep dicht, ook als DeWarmte 100 % vroeg. Kamers met een losse sensor koelden dan af.
+- Zolang de kamerregeling aan staat, krijgt de TRV als setpoint **kamerdoel + 4 °C** (max. 25 °C). Zo blijft de TRV op "verwarmen" en bepaalt alleen DeWarmte de klepstand.
+- Zet je de kamerregeling of de regeling uit, of wordt de integratie gestopt, dan krijgen de TRV's weer het gewone kamerdoel.
+- Valt Home Assistant helemaal uit, dan regelen de TRV's naar dat hogere setpoint op hun eigen sensor. In de kamer wordt het dan ongeveer 1–2 °C warmer dan het doel, tot Home Assistant weer draait.
+
 ## Nieuw in 3.8.1: uit als er niets te doen is
 - **Uitschakelen hangt aan de looptijd.** Is er geen warmtevraag meer, dan gaat de unit uit zodra de
   compressor zijn minimale looptijd van 30 min heeft gehad. De vaste wachttijd van 45 min na het einde

@@ -31,6 +31,8 @@ from .rooms import RoomController, parse_room_config
 from .writes import WriteGuard
 
 HARD_BLOCKS = ("kritieke Modbus-data niet vers", "storing actief", "ontdooien actief")
+TRV_SETPOINT_MARGIN = 4.0   # TRV-setpoint = kamerdoel + marge, zodat de TRV zelf nooit dichtknijpt
+TRV_SETPOINT_MAX = 25.0
 
 _LOGGER = logging.getLogger(__name__)
 SLAVE_NAMES = {1: "SunRain (pomp AO)", 2: "Pomp T", 5: "Meter pomp AO", 7: "Meter pomp T",
@@ -946,10 +948,13 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             if trv.state == "off":
                 await self._svc("climate", "set_hvac_mode", {"entity_id": cfg.trv, "hvac_mode": "heat"})
             trv_t = _f(trv.attributes.get("temperature"))
-            if (target is not None and (trv_t is None or abs(trv_t - target) >= 0.5)
+            # TRV-setpoint ruim boven het kamerdoel: anders gaat de TRV op zijn eigen (te warme) sensor
+            # "idle" en knijpt hij de klep zelf dicht. DeWarmte bepaalt de klep; bij teruggeven = kamerdoel.
+            sp = None if target is None else min(TRV_SETPOINT_MAX, round((target + TRV_SETPOINT_MARGIN) * 2) / 2)
+            if (sp is not None and (trv_t is None or abs(trv_t - sp) >= 0.5)
                     and now - self._trv_set.get(key, 0) >= 600):
-                self._trv_set[key] = now                  # TRV-setpoint = kamerdoel (terugval als DeWarmte stopt)
-                await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": target})
+                self._trv_set[key] = now
+                await self._svc("climate", "set_temperature", {"entity_id": cfg.trv, "temperature": sp})
         if fan_write:
             pct = int(round(dec["fan"] * 100))
             err = await self._svc("fan", "set_percentage", {"entity_id": cfg.fan, "percentage": pct}) if pct \
