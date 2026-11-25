@@ -81,6 +81,8 @@ class DWRawBinary(CoordinatorEntity, BinarySensorEntity):
         self._key = reg.key
         self._attr_unique_id = f"{entry.entry_id}_{reg.key}"
         self._attr_name = f"{reg.name} ({reg.addr}.{reg.bit})"[:120]
+        # honderden statusbits: standaard uit (de belangrijke staan als eigen binaire sensor op het hoofdapparaat)
+        self._attr_entity_registry_enabled_default = False
         self._attr_device_info = slave_device(entry, reg.slave)
         if "fault" in reg.name.lower() or "protection" in reg.name.lower():
             self._attr_device_class = BinarySensorDeviceClass.PROBLEM

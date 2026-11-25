@@ -33,6 +33,7 @@ class RoomThermostat(CoordinatorEntity, ClimateEntity):
     _attr_max_temp = 25.0
     _attr_target_temperature_step = 0.5
     _enable_turn_on_off_backwards_compatibility = False
+    _unrecorded_attributes = frozenset({"model", "klep_reden", "doel_reden", "klep_gewenst"})
 
     def __init__(self, coordinator, entry, cfg) -> None:
         super().__init__(coordinator)

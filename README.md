@@ -57,7 +57,8 @@ De sensoren **Laatste actie** (laatste 30 acties als attribuut) en **Laatste uur
 - Apparaat **DeWarmte**: ca. 45 hoofdentiteiten (metingen, beslissingen, schakelaar, knop).
 - Apparaten **SunRain**, **Pomp T**, **kWh-meters** en **warmtemeters**: alle ca. 560 registers en statusbits uit de
   fabrikanttabellen (onder Diagnostiek, met registernummer in de naam). Ze zijn alleen-lezen.
-  Wil je je database klein houden, sluit ze dan uit van de recorder of schakel ongebruikte uit.
+  Sinds 3.8.4 staan ze bij een nieuwe installatie **standaard uit**, behalve de paar die het dashboard gebruikt;
+  aanzetten kan per entiteit. De schrijfbare registers staan als instelling (number) bij het apparaat.
 
 ## Controleer de eerste dag
 - Of het **debiet** van de warmtemeters (factor 0,001667) klopt met het display van de meter.
@@ -362,6 +363,17 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 **Sensoruitval:** een kamersensor die 30 minuten niets meldt, telt niet meer mee. De kamer regelt dan op de sensor van de TRV, tot de kamersensor weer meldt. Het attribuut `sensor_stale` laat zien wanneer dat zo is.
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
+
+## Nieuw in 3.8.4: lichter voor Home Assistant
+- **Ruwe registers standaard uit.** De ca. 300 ruwe registersensoren en 240 statusbits worden bij een nieuwe
+  installatie uitgeschakeld aangemaakt (behalve de registers die het dashboard gebruikt). Bestaande entiteiten
+  blijven zoals ze zijn; schakel ongebruikte zelf uit (Instellingen > Entiteiten, filter op DeWarmte).
+  De schrijfbare registers zijn al als instelling (number) beschikbaar, dus die waarden staan er dubbel.
+- **Minder recorder-opslag.** Grote of steeds wisselende attributen (acties, rapporten, prijsplanning,
+  kamermodellen, Modbus-leeftijden) worden niet meer in de database geschiedenis bewaard. Ze blijven gewoon zichtbaar.
+- **Prijsplanning hooguit 1x per minuut doorgerekend** in plaats van bij elke poll (elke 10 s).
+- **Dashboard toont de DeWarmte-thermostaten.** Met de kamerregeling verwijst het dashboard naar
+  `climate.dewarmte_…` in plaats van de oude (VTherm-)entiteiten die na de overstap niet meer bestaan.
 
 ## Nieuw in 3.8.2: TRV knijpt de klep niet meer zelf dicht
 De Sonoff TRVZB heeft een eigen thermostaatje op zijn eigen sensor, vlak bij de radiator (1–2,5 °C te warm). Zodra die sensor het setpoint haalde, ging de TRV op "idle" en draaide hij de klep dicht, ook als DeWarmte 100 % vroeg. Kamers met een losse sensor koelden dan af.

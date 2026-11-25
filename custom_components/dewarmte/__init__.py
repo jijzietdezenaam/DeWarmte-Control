@@ -1,4 +1,4 @@
-"""DeWarmte Control 3.4 - regeling van SunRain en Pomp T via DR164/MQTT."""
+"""DeWarmte Control - regeling van SunRain en Pomp T via DR164/MQTT."""
 from __future__ import annotations
 
 from homeassistant.components import mqtt
@@ -16,8 +16,9 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from . import dashboard, schema
-from .const import CONF_PRICE, CONF_ROOMS, DOMAIN, PLATFORMS
+from .const import CONF_PRICE, CONF_ROOM_CFG, CONF_ROOMS, DOMAIN, PLATFORMS
 from .coordinator import DeWarmteCoordinator
+from .rooms import parse_room_config
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +52,14 @@ async def _write_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> None:
         return eid
 
     cfg = {**entry.data, **entry.options}
-    content = dashboard.build(resolve, list(cfg.get(CONF_ROOMS, [])), cfg.get(CONF_PRICE))
+    # Kamers met de eigen kamerregeling: de DeWarmte-thermostaat tonen, niet het oude (VTherm-)entity-id,
+    # dat na de overstap vaak niet meer bestaat.
+    own = {c.key: c for c in parse_room_config(cfg.get(CONF_ROOM_CFG))}
+    rooms = [(reg.async_get_entity_id("climate", DOMAIN, f"{entry.entry_id}_room_{e.split('.', 1)[-1]}") or e)
+             if e in own else e for e in cfg.get(CONF_ROOMS, [])]
+    rooms += [reg.async_get_entity_id("climate", DOMAIN, f"{entry.entry_id}_room_{k.split('.', 1)[-1]}") or k
+              for k in own if k not in cfg.get(CONF_ROOMS, [])]
+    content = dashboard.build(resolve, rooms, cfg.get(CONF_PRICE))
     www, out = hass.config.path("www", "dewarmte"), hass.config.path("dewarmte", "dashboard.yaml")
 
     def _write() -> None:

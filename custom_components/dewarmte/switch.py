@@ -137,6 +137,7 @@ class RoomControlSwitch(CoordinatorEntity, SwitchEntity):
     _attr_has_entity_name = True
     _attr_name = "Kamerregeling"
     _attr_icon = "mdi:radiator"
+    _unrecorded_attributes = frozenset({"aanvoer", "kamers"})   # groot en wisselt elke minuut
 
     def __init__(self, coordinator, entry) -> None:
         super().__init__(coordinator)

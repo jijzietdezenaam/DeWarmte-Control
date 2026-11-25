@@ -18,6 +18,18 @@ from .copstats import NAMES as PERIOD_NAMES, PERIODS as COP_PERIODS, SOURCES as 
 from .engine import MODE_NAMES
 from .registers import RAW, run_state_text
 
+# Ruwe registers die het DeWarmte-dashboard/schema gebruikt: standaard aan. De overige honderden
+# ruwe registers staan standaard uit (scheelt elke 10 s een statusupdate en veel recorder-opslag);
+# aanzetten kan per entiteit. Schrijfbare registers staan al als 'number' (service-instelling).
+RAW_ENABLED = frozenset({"r1_33", "r1_34", "r2_5", "r2_50", "r2_51", "r2_58", "r2_60"})
+
+# Grote of steeds wisselende attributen niet in de recorder (database) bewaren: ze blijven
+# gewoon zichtbaar in HA en op het dashboard, alleen de geschiedenis ervan wordt niet opgeslagen.
+UNRECORDED = frozenset({
+    "acties", "tekst", "problemen", "planning", "kamers", "afkoelsnelheid", "prijsrang_nu", "prijs_nu", "reden",
+    "wijzigingen", "blokkades", "opmerkingen", "kamertekort_gefilterd", "geleerd", "laatste", "voorbereiding",
+    "volgend_tapmoment", "actief", "looptijden_min", "1", "2", "5", "7", "14", "16"})
+
 T, M = SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT
 C = UnitOfTemperature.CELSIUS
 
@@ -171,6 +183,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class DWSensorEntity(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _unrecorded_attributes = UNRECORDED
     entity_description: DWSensor
 
     def __init__(self, coordinator, entry, description: DWSensor) -> None:
@@ -202,6 +215,7 @@ class DWRawSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._key = reg.key
         self._attr_unique_id = f"{entry.entry_id}_{reg.key}"
+        self._attr_entity_registry_enabled_default = reg.key in RAW_ENABLED
         self._attr_name = f"{reg.name} ({reg.addr}{'' if reg.bit is None else '.' + str(reg.bit)})"[:120]
         self._attr_device_info = slave_device(entry, reg.slave)
         dc, unit = UNITS.get(reg.unit, (None, None))

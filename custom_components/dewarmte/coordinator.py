@@ -86,6 +86,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self._last_price_fetch = 0.0
         self._price_error: str | None = None
         self.plan_rooms: dict[str, dict] = {}
+        self._plan_info: dict | None = None
+        self._plan_info_t = 0.0
         self._auto_dis_t = 0.0
         self.alerts = Alerts()
         self.cycles = CycleCounter()
@@ -96,7 +98,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self._unsub_week = None
         self._saved_t = 0.0
         self.room_cfgs = parse_room_config(self.cfg.get(CONF_ROOM_CFG))
-        self.rooms_ctl = RoomController(self.room_cfgs, no_window=set(self.cfg.get(CONF_TRV_ROOMS) or []))
+        self.trv_rooms: set[str] = set(self.cfg.get(CONF_TRV_ROOMS) or [])
+        self.rooms_ctl = RoomController(self.room_cfgs, no_window=self.trv_rooms)
         self.room_control = False            # zelflerende kamerregeling (vervangt VTherm) aan/uit
         self.room_info: dict[str, dict] = {}
         self._room_inputs: dict[str, Room] = {}
@@ -123,7 +126,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.dhw = DhwLearner(DhwSettings(usage_temp=self.settings.dhw_usage_temp or 50.0), stored.get("dhw"))
         self.week = WeekStats(stored.get("week"))
         self.last_week = stored.get("last_week") or self.last_week
-        self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"), no_window=set(self.cfg.get(CONF_TRV_ROOMS) or []))
+        self.rooms_ctl = RoomController(self.room_cfgs, stored.get("rooms"), no_window=self.trv_rooms)
         self.cop = CopStats(stored.get("cop"))
         self.room_control = bool(stored.get("room_control", False)) and bool(self.room_cfgs)
         self._unsub = await mqtt.async_subscribe(
@@ -210,6 +213,16 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self.async_update_listeners()
 
     # ------------------------------------------------------------ schrijven
+    def _refresh(self, slave: int, reg: int) -> None:
+        """Het blok waar dit register in zit bij de volgende poll direct opnieuw lezen."""
+        for (sl, start, count), st in self._sched.items():
+            if sl == slave and start <= reg < start + count:
+                st["next"] = 0.0
+
+    def _log_action(self, item: dict) -> None:
+        self.report.action(item)
+        self.actions = (self.actions + [item])[-30:]
+
     async def _execute(self, decision: dict) -> None:
         hard = [b for b in decision["blocks"] if b in HARD_BLOCKS]
         if not self.control_enabled or hard:
@@ -232,14 +245,11 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 await self.bus.write_single(slave, reg, value)
                 item["ok"] = True
                 self._raw[(slave, reg)] = (value, time.monotonic())       # echo bevestigd
-                for key, st in self._sched.items():                        # blok direct opnieuw lezen
-                    if key[0] == slave and key[1] <= reg < key[1] + key[2]:
-                        st["next"] = 0.0
+                self._refresh(slave, reg)
             except ModbusError as err:
                 item["error"] = str(err)
             self.guard.record(slave, reg, now, item["ok"], value)
-            self.report.action(item)
-            self.actions = (self.actions + [item])[-30:]
+            self._log_action(item)
             _LOGGER.info("Schrijfactie %s %s → %s: %s", item["name"], item["old"], item["new"],
                          "OK" if item["ok"] else item["error"])
             if self.guard.tripped:
@@ -285,15 +295,12 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             await self.bus.write_single(slave, reg, value, service=service)
             item["ok"] = True
             self._raw[(slave, reg)] = (value & 0xFFFF, time.monotonic())
-            for key, st in self._sched.items():
-                if key[0] == slave and key[1] <= reg < key[1] + key[2]:
-                    st["next"] = 0.0
+            self._refresh(slave, reg)
         except ModbusError as err:
             item["error"] = str(err)
         if not service:
             self.guard.record(slave, reg, time.monotonic(), item["ok"], value)
-        self.report.action(item)
-        self.actions = (self.actions + [item])[-30:]
+        self._log_action(item)
         _LOGGER.info("%s %s: %s → %s: %s", "Service" if service else "Schrijfactie", name, old, new,
                      "OK" if item["ok"] else item["error"])
         return item
@@ -336,13 +343,10 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             old, new = await self.bus.write_bits(1, 816, self.VENT_MASK, on)
             item.update(ok=True, old=f"{old:#06x}", new=f"{new:#06x}")
             self._raw[(1, 816)] = (new, time.monotonic())
-            for key, st in self._sched.items():
-                if key[0] == 1 and key[1] <= 816 < key[1] + key[2]:
-                    st["next"] = 0.0
+            self._refresh(1, 816)
         except ModbusError as err:
             item["error"] = str(err)
-        self.report.action(item)
-        self.actions = (self.actions + [item])[-30:]
+        self._log_action(item)
         _LOGGER.warning("Ontluchten %s: %s", "start" if on else "stop", "OK" if item["ok"] else item["error"])
         return item
 
@@ -375,9 +379,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         v = self.vent
         if not v:
             return
-        for key, st in self._sched.items():                 # tijdens ontluchten 816 elke cyclus lezen
-            if key[0] == 1 and key[1] <= 816 < key[1] + key[2]:
-                st["next"] = 0.0
+        self._refresh(1, 816)
         raw = self._raw.get((1, 816))
         bit = None if raw is None or raw[1] < v["start"] else bool(raw[0] & self.VENT_MASK)
         age = time.monotonic() - v["start"]
@@ -490,8 +492,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         await self.async_send_report()
 
     # ------------------------------------------------------------ weekrapport
-    def _energies(self) -> dict:
-        v = self._last_values
+    def _energies(self, v: dict | None = None) -> dict:
+        v = self._last_values if v is None else v
         return {k: v.get(k) for k in ("ao_pm_energy", "ao_hm_energy", "pt_pm_energy")}
 
     async def _on_week(self, _now=None) -> None:
@@ -571,11 +573,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         if price is None and self.cfg.get(CONF_PRICE):
             st = self.hass.states.get(self.cfg[CONF_PRICE])
             price = _f(st.state) if st is not None else None
-        self.week.sample(wall, rows, el, price, self._energies_from(v))
-
-    @staticmethod
-    def _energies_from(v: dict) -> dict:
-        return {k: v.get(k) for k in ("ao_pm_energy", "ao_hm_energy", "pt_pm_energy")}
+        self.week.sample(wall, rows, el, price, self._energies(v))
 
     def _dhw_need(self, v: dict) -> tuple[float | None, str]:
         if not self.settings.dhw_usage_temp or self.disinfect or not self.control_enabled:
@@ -676,7 +674,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         if valve is None and isinstance(a.get("vtherm_over_climate_valve"), dict):
             valve = _f(a["vtherm_over_climate_valve"].get("valve_open_percent"))
         return Room(entity_id, True, st.state, _f(a.get("current_temperature")), _f(a.get("temperature")), valve,
-                    trv_sensor=entity_id in (self.cfg.get(CONF_TRV_ROOMS) or []))
+                    trv_sensor=entity_id in self.trv_rooms)
 
     def _outdoor(self, v: dict) -> float | None:
         outdoor = None
@@ -733,6 +731,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
 
     async def async_set_vacation(self, on: bool, reason: str = "handmatig") -> None:
         self.vacation_on = on
+        self._plan_info = None
         if not on:
             self.vacation_return = None if reason == "handmatig" else self.vacation_return
         await self._store.async_save(self._state())
@@ -758,6 +757,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
 
     async def async_set_plan(self, enabled: bool) -> None:
         self.plan_enabled = enabled
+        self._plan_info = None
         await self._store.async_save(self._state())
         self.async_update_listeners()
 
@@ -855,14 +855,20 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             item = {"time": time.strftime("%H:%M"), "name": f"kamerdoel {a.get('friendly_name', ent)}",
                     "register": ent, "old": f"{current:g} °C", "new": f"{target:g} °C", "why": why,
                     "ok": ok, "error": err}
-            self.report.action(item)
-            self.actions = (self.actions + [item])[-30:]
+            self._log_action(item)
             _LOGGER.info("Kamerdoel %s: %s → %s (%s)%s", ent, current, target, why, "" if ok else f" FOUT {err}")
         self.plan_rooms = rooms
+        self._plan_info = None                       # na een nieuwe planstap opnieuw opbouwen
 
     def plan_info(self) -> dict:
-        p = self.planner
+        """Planner-overzicht voor de sensor. De 24-uursplanning is rekenwerk: hooguit 1x per minuut."""
         now = time.time()
+        if self._plan_info is None or now - self._plan_info_t >= 60:
+            self._plan_info, self._plan_info_t = self._build_plan_info(now), now
+        return self._plan_info
+
+    def _build_plan_info(self, now: float) -> dict:
+        p = self.planner
         return {"actief": self._plan_active(), "vakantiemodus": self.vacation_active(now), "reden": p.reason, "blok": p.block(now), "thuis": self._home(),
                 "venster_uur": round(p.window_h, 1), "prijsrang_nu": p.rank_now(now),
                 "prijs_nu": p.price_now(now), "fout": self._price_error, "kamers": self.plan_rooms,
@@ -943,8 +949,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             item = {"time": time.strftime("%H:%M"), "name": f"klep {cfg.name}", "register": cfg.opening,
                     "old": "?" if old_pct is None else f"{old_pct} %", "new": f"{pct} %", "why": dec["why"],
                     "ok": not errors, "error": "; ".join(errors) or None}
-            self.report.action(item)
-            self.actions = (self.actions + [item])[-30:]
+            self._log_action(item)
         if trv is not None and trv.state not in ("unavailable", "unknown"):
             if trv.state == "off":
                 await self._svc("climate", "set_hvac_mode", {"entity_id": cfg.trv, "hvac_mode": "heat"})
@@ -1084,7 +1089,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                           "voorspelfout_k_per_uur": None if m.err is None else round(m.err, 2)}}
             if active:
                 self._room_inputs[key] = Room(key, tr is not None, ctl.mode.get(key, "heat"), tr, target,
-                                              valve_now, trv_sensor=key in (self.cfg.get(CONF_TRV_ROOMS) or []))
+                                              valve_now, trv_sensor=key in self.trv_rooms)
         if jobs and (self._room_task is None or self._room_task.done()):
             # TRV's/fans op de achtergrond aansturen: een Zigbee-TRV die niet antwoordt mag de
             # warmtepompregeling niet ophouden (ZHA wacht soms tientallen seconden per poging).
