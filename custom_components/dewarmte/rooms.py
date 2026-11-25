@@ -41,11 +41,20 @@ class RoomCfg:
     day: float
     night: float
     fan: str | None = None   # optioneel: fan-entiteit (radiatorventilatoren)
+    away: float | None = None        # K lager als niemand thuis is (None = algemene instelling)
+    price_down: float | None = None  # max. K lager als stroom duur is (None = algemene instelling)
+
+
+def _num(text: str) -> float:
+    return float(text.strip().replace(",", "."))
 
 
 def parse_room_config(text: str | None) -> list[RoomCfg]:
     """Eén regel per kamer:
-    `climate.woonkamer_2 | Woonkamer | sensor.temp | climate.trv | number.open | number.dicht | 20,5 | 19 | fan.jaga`
+    `climate.woonkamer_2 | Woonkamer | sensor.temp | climate.trv | number.open | number.dicht | 20 | 19 | fan.jaga | afwezig=1 | duur=0,5`
+
+    Na de nachttemperatuur mogen in willekeurige volgorde komen: een fan-entiteit (`fan.…`),
+    `afwezig=K` (zoveel lager als niemand thuis is) en `duur=K` (max. zoveel lager bij dure stroom).
     """
     out: list[RoomCfg] = []
     for line in (text or "").replace(";", "\n").splitlines():
@@ -53,11 +62,23 @@ def parse_room_config(text: str | None) -> list[RoomCfg]:
         if len(p) < 8 or not p[0].startswith("climate."):
             continue
         try:
-            day, night = float(p[6].replace(",", ".")), float(p[7].replace(",", "."))
+            day, night = _num(p[6]), _num(p[7])
         except ValueError:
             continue
-        out.append(RoomCfg(p[0], p[1] or p[0], p[2], p[3], p[4], p[5], day, night,
-                           p[8] if len(p) > 8 and p[8].startswith("fan.") else None))
+        fan = away = price = None
+        for extra in p[8:]:
+            key, _, val = extra.partition("=")
+            key = key.strip().lower()
+            try:
+                if extra.startswith("fan."):
+                    fan = extra
+                elif key in ("afwezig", "away") and val:
+                    away = max(0.0, _num(val))
+                elif key in ("duur", "price") and val:
+                    price = max(0.0, _num(val))
+            except ValueError:
+                continue
+        out.append(RoomCfg(p[0], p[1] or p[0], p[2], p[3], p[4], p[5], day, night, fan, away, price))
     return out
 
 

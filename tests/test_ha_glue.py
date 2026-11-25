@@ -343,6 +343,21 @@ async def main():
     tgt = c.room_info["climate.woonkamer"]["target"]                       # TRV-setpoint ruim boven doel
     assert ("climate", "set_temperature", {"entity_id": "climate.trv_w", "temperature": min(25.0, round((tgt + 4) * 2) / 2)}) \
         in Hass.services.calls, [x for x in Hass.services.calls if x[1] == "set_temperature"]
+    # verlaging per kamer: afwezig en duur per kamer instelbaar, ze stapelen niet
+    xy = rooms_m.parse_room_config(
+        "climate.x | X | s.x | c.x | n.xo | n.xc | 20 | 20 | afwezig=1 | duur=0,5\n"
+        "climate.y | Y | s.y | c.y | n.yo | n.yc | 18,5 | 18,5 | duur=1 | afwezig=1")
+    assert (xy[0].away, xy[0].price_down, xy[1].away, xy[1].price_down, xy[0].fan) == (1.0, 0.5, 1.0, 1.0, None)
+    keep_active, keep_off = c._plan_active, c.planner.offset
+    c._plan_active = lambda: True
+    def tg(cfg, home): return c._room_target(cfg.key, cfg, time.time(), home, False)[0]
+    c.planner.offset = -1.0                                                 # duur
+    assert (tg(xy[0], True), tg(xy[1], True)) == (19.5, 17.5)              # duur: -0,5 resp. -1
+    assert (tg(xy[0], False), tg(xy[1], False)) == (19.0, 17.5)            # afwezig én duur: grootste telt
+    c.planner.offset = 0.0
+    assert (tg(xy[0], False), tg(xy[1], False), tg(xy[0], True)) == (19.0, 17.5, 20.0)
+    c._plan_active, c.planner.offset = keep_active, keep_off
+    c._room_offset.clear()
     # handmatig: doel tot het volgende blok, max. 3 uur
     await ents[1].async_set_temperature(temperature=21.0); await settle()
     assert ents[1].preset_mode == "handmatig" and ents[1].native_target_temperature == 20.0   # slaapkamer-maximum 20

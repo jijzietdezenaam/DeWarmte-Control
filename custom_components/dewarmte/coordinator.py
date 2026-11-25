@@ -109,6 +109,7 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         self._supply_weight = 0.0
         self.supply_info: dict = {}
         self._trv_set: dict[str, float] = {}
+        self._room_offset: dict[str, float] = {}   # werkelijke prijs-offset per kamer (na begrenzing)
         self._room_task = None
         self.cop = CopStats()
 
@@ -713,10 +714,18 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             pomp_t_power_w=v.get("pt_pm_w"), disinfection=v.get("disinfection"),
             price=price, price_level=level, critical_ok=bool(status.get(1, {}).get("ok")),
             price_rank=self.planner.rank_now(time.time()) if self.plan_enabled else None,
-            plan_offset=self.planner.offset if self._plan_active() else None,
+            plan_offset=self._effective_offset() if self._plan_active() else None,
             dhw_need=need, dhw_need_reason=need_reason, vacation=self.vacation_active(time.time()),
             supply_model=self._supply_ema if self.room_control else None,
             supply_weight=self._supply_weight if self.room_control else 0.0)
+
+    def _effective_offset(self) -> float:
+        """Prijs-offset waarmee de aanvoer meegaat: met de kamerregeling het gemiddelde van wat de kamers
+        werkelijk krijgen (per kamer begrensd, afwezig telt niet dubbel), anders die van de planner."""
+        offs = [self._room_offset[c.key] for c in self.room_cfgs if c.key in self._room_offset]
+        if self.room_control and offs:
+            return sum(offs) / len(offs)
+        return self.planner.offset
 
     # ------------------------------------------------------------ vakantiemodus
     def vacation_preheat_from(self) -> float | None:
@@ -1001,9 +1010,16 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             return man[0], "handmatig tot " + time.strftime("%H:%M", time.localtime(man[1]))
         if man:
             self.rooms_ctl.manual.pop(key, None)
+        away = p.s.away_drop if cfg.away is None else cfg.away
+        down = p.s.band_down if cfg.price_down is None else cfg.price_down
+        off = p.offset if self._plan_active() else 0.0
+        off = max(off, -down)                            # duur: per kamer begrensd
+        if not home and off < 0:
+            off = min(0.0, off + away)                   # afwezig en duur stapelen niet: de grootste telt
+        self._room_offset[key] = off
         presets = {"comfort_temp": cfg.day, "eco_temp": cfg.night,
-                   "comfort_away_temp": cfg.day - p.s.away_drop, "eco_away_temp": cfg.night - p.s.away_drop}
-        return p.room_target(key, presets, home, now, None, offset=p.offset if self._plan_active() else 0.0)
+                   "comfort_away_temp": cfg.day - away, "eco_away_temp": cfg.night - away}
+        return p.room_target(key, presets, home, now, None, offset=off, band_down=down)
 
     async def _room_step(self, v: dict) -> None:
         if not self.room_cfgs:
