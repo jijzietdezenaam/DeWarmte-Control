@@ -178,3 +178,11 @@ if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
             fn(); print("PASS", name)
+
+
+def test_no_blind_valve_after_restart():
+    ctl = RoomController(cfgs())
+    d = ctl.decide("climate.finn", 1_800_000_000.0, None, 19.0, 5.0, 35.0, True)   # nog geen kamertemperatuur
+    assert d["write"] is False and ctl.state["climate.finn"].u is None
+    d = ctl.decide("climate.finn", 1_800_000_060.0, 18.0, 19.0, 5.0, 35.0, True)   # wel: gewoon regelen
+    assert d["write"] is True

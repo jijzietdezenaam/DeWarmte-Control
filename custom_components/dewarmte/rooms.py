@@ -354,6 +354,8 @@ class RoomController:
             force or wall - rs.u_t >= s.write_min_s))
         if rs.u is not None and abs(u - rs.u) < 1e-9:
             write = False
+        if tr is None and rs.u is None and not force:
+            write = False          # na een herstart nog geen kamertemperatuur: klep niet blind op 50 % zetten
         # fan: alleen bij circulatie en klep echt open
         fan = 0.0
         if cfg.fan and flowing and u >= 0.3 and self.mode.get(key) != "off" and wall >= rs.window_until:

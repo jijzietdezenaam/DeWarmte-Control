@@ -364,6 +364,10 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.8.6: geen blinde klepstand na herstart
+Direct na een herstart van Home Assistant hebben kamersensoren en TRV's soms nog geen waarde. DeWarmte zette de
+klep dan op 50 %; nu blijft de klep onaangeroerd tot er een kamertemperatuur is (meestal binnen een minuut).
+
 ## Nieuw in 3.8.5: verlaging per kamer bij afwezig en dure stroom
 In de kamerregeling kun je per kamer achter de nachttemperatuur `afwezig=K` en `duur=K` zetten:
 ```
