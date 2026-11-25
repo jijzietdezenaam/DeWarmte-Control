@@ -52,6 +52,7 @@ class Settings:
     demand_off_delay_s: float = 300.0
     # aan/uit
     min_on_min: float = 30.0
+    startup_grace_min: float = 15.0      # na herstart niet meteen uitzetten
     min_off_min: float = 10.0
     unit_off_delay_min: float = 45.0
     # vermogensmodus: boven silent_above altijd Stil; eronder zelf opschalen
@@ -190,6 +191,7 @@ class Engine:
         self._mode_changed: float | None = None
         self._unit_edge: float | None = None
         self._run_since: float | None = None      # compressor draait sinds
+        self._t0: float | None = None             # eerste stap na (her)start
         self._last_on: float | None = None
         self._dhw_target: float | None = None
         self._dhw_changed: float | None = None
@@ -264,24 +266,29 @@ class Engine:
             target = round(min(max(target, s.min_supply), s.max_supply), 1)
 
         # aan/uit met vertragingen
+        if self._t0 is None:
+            self._t0 = now
+        if inp.f_comp is not None:                     # eerst looptijd bijwerken, dan beslissen
+            if inp.f_comp > 0:
+                if self._run_since is None:
+                    self._run_since = now
+            elif not inp.defrost:
+                self._run_since = None
         if want:
             self._no_want_since = None
             desired_on: bool | None = True
         else:
             if self._no_want_since is None:
                 self._no_want_since = now
-            # uit zodra de compressor zijn minimale looptijd heeft gehad (niet: een vaste wachttijd na de vraag)
+            # uit zodra de compressor zijn minimale looptijd heeft gehad (niet: een vaste wachttijd na de vraag);
+            # niet vlak na een (her)start: dan zijn kamers en kleppen nog niet allemaal ingelezen
             ran = 0.0 if self._run_since is None else now - self._run_since
-            if self._run_since is None or ran >= s.min_on_min * 60:
+            if now - self._t0 < s.startup_grace_min * 60:
+                desired_on = None
+            elif self._run_since is None or ran >= s.min_on_min * 60:
                 desired_on = False
             else:
                 desired_on = None
-        if inp.f_comp is not None:
-            if inp.f_comp > 0:
-                if self._run_since is None:
-                    self._run_since = now
-            elif not inp.defrost:
-                self._run_since = None
         if inp.on_773 is not None:
             cur_on = bool(inp.on_773)
             if self._last_on is None or cur_on != self._last_on:

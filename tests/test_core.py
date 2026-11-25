@@ -121,6 +121,15 @@ def test_unit_off_after_runtime_not_fixed_delay():
             off = t; break
     assert off is not None and 29 * 60 <= off <= 32 * 60, off
 
+def test_no_switch_off_right_after_restart():
+    e = eng.Engine(eng.Settings(keep_on_below=-10))       # herstart: nog geen kamers/kleppen ingelezen
+    d = e.update(inp(1000, rooms=[], on_773=1, f_comp=40))
+    assert d["unit_on_desired"] is None, d["unit_on_desired"]
+    for t in range(1000, 1000 + 14 * 60, 30):
+        assert e.update(inp(t, rooms=[], on_773=1, f_comp=40))["unit_on_desired"] is not False
+    late = [e.update(inp(t, rooms=[], on_773=1, f_comp=40))["unit_on_desired"] for t in range(1000 + 16 * 60, 1000 + 40 * 60, 30)]
+    assert False in late                                  # daarna gewoon uit na de minimale looptijd
+
 def test_demand_needs_delay_and_curve():
     e = eng.Engine(eng.Settings())
     assert e.update(inp(0))["heat_demand"] is False
