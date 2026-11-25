@@ -92,14 +92,23 @@ def inp(now, **kw):
                 on_773=0, set_769=25, power_775=2, critical_ok=True, dhw_top=45, dhw_set=45, price=0.25)
     base.update(kw); return eng.Inputs(**base)
 
-def test_room_above_target_is_no_demand():
+def test_bundled_demand_start_05_below_stop_05_above():
     e = eng.Engine(eng.Settings(keep_on_below=-10))
     for t in range(0, 600, 30):                           # klep 30 % maar 0,5 K boven doel
         d = e.update(inp(t, rooms=rooms(30, 21.0, 20.5)))
     assert d["heat_demand"] is False
-    for t in range(600, 1200, 30):                        # onder doel met open klep: wel vraag
+    for t in range(600, 1200, 30):                        # 0,2 K onder doel, klep open: nog niet starten
         d = e.update(inp(t, rooms=rooms(30, 20.3, 20.5)))
+    assert d["heat_demand"] is False
+    for t in range(1200, 2400, 30):                       # 0,5 K onder doel: starten
+        d = e.update(inp(t, rooms=rooms(60, 20.0, 20.5)))
     assert d["heat_demand"] is True
+    for t in range(2400, 3000, 30):                       # op doel + 0,3 met open klep: doorladen
+        d = e.update(inp(t, rooms=rooms(30, 20.8, 20.5)))
+    assert d["heat_demand"] is True
+    for t in range(3000, 4200, 30):                       # doel + 0,5 bereikt: klaar
+        d = e.update(inp(t, rooms=rooms(20, 21.0, 20.5)))
+    assert d["heat_demand"] is False
 
 def test_unit_off_after_runtime_not_fixed_delay():
     e = eng.Engine(eng.Settings(keep_on_below=-10))

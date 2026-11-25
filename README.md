@@ -352,6 +352,17 @@ dit jaar en totaal**.
 - **"Totaal" telt vanaf 3.8.0.** Eerdere periodes kunnen niet achteraf worden opgesplitst in met en
   zonder ontdooien.
 
+## Nieuw in 3.8.3: warmtevraag bundelen
+Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarna vroeg de volgende om warmte. Elke keer startte de pomp dan opnieuw voor een korte run.
+- **Starten** doet de pomp pas als een kamer **0,5 °C onder zijn doel** zit, met de klep open.
+- **Zolang de pomp draait**, laden alle kamers mee tot **doel + 0,5 °C**. Slaapkamers gaan daarbij niet boven het ingestelde maximum. De pomp stopt pas als elke kamer met een open klep die grens heeft gehaald.
+- Het resultaat: minder starts en langere runs op laag vermogen. De kamertemperatuur schommelt binnen ±0,5 °C rond het doel.
+- Je kunt beide grenzen aanpassen met `demand_start_k` en `charge_k`, standaard 0,5.
+
+**Sensoruitval:** een kamersensor die 30 minuten niets meldt, telt niet meer mee. De kamer regelt dan op de sensor van de TRV, tot de kamersensor weer meldt. Het attribuut `sensor_stale` laat zien wanneer dat zo is.
+
+**Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
+
 ## Nieuw in 3.8.2: TRV knijpt de klep niet meer zelf dicht
 De Sonoff TRVZB heeft een eigen thermostaatje op zijn eigen sensor, vlak bij de radiator (1–2,5 °C te warm). Zodra die sensor het setpoint haalde, ging de TRV op "idle" en draaide hij de klep dicht, ook als DeWarmte 100 % vroeg. Kamers met een losse sensor koelden dan af.
 - Zolang de kamerregeling aan staat, krijgt de TRV als setpoint **kamerdoel + 4 °C** (max. 25 °C). Zo blijft de TRV op "verwarmen" en bepaalt alleen DeWarmte de klepstand.

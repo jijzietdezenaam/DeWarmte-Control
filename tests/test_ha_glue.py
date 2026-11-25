@@ -355,6 +355,17 @@ async def main():
     assert c.rooms_ctl.state["climate.woonkamer"].trv_ok is False
     assert any(a_["name"] == "klep Woonkamer" and not a_["ok"] for a_ in c.actions)
     Hass.dead.clear()
+    # kamersensor die al 2 uur niets meldt: terugval op de TRV-sensor
+    from datetime import timedelta
+    h.states.d["sensor.t_w"].last_updated = datetime.now(timezone.utc) - timedelta(hours=2)
+    c._last_room = 0; await upd()
+    i_w = c.room_info["climate.woonkamer"]
+    assert i_w["sensor_stale"] is True and i_w["current"] == 21.0, i_w
+    # pomp draait (warmtevraag): kamers laden mee tot doel + 0,5, slaapkamer niet boven het maximum
+    c.engine.demand = True
+    c._last_room = 0; await upd()
+    assert c.room_info["climate.woonkamer"]["charge_target"] == c.room_info["climate.woonkamer"]["target"] + 0.5
+    assert c.room_info["climate.b"]["charge_target"] <= max(20.0, c.room_info["climate.b"]["target"] or 0)
     # uitzetten: TRV's krijgen hun eigen regeling terug
     await c.async_set_room_control(False)
     assert h.states.d["number.w_open"].state == "100" and h.states.d["number.w_close"].state == "0"

@@ -48,6 +48,9 @@ class Settings:
     room_above_k: float = 0.2               # kamer zoveel boven doel: telt niet als warmtevraag, ook niet met open klep
     room_deficit_on: float = 0.4
     room_deficit_off: float = 0.1
+    # gebundelde warmtevraag: starten pas bij dit tekort; draait hij, dan laden alle kamers door tot doel + charge_k
+    demand_start_k: float = 0.5
+    charge_k: float = 0.5
     demand_on_delay_s: float = 120.0
     demand_off_delay_s: float = 300.0
     # aan/uit
@@ -227,11 +230,13 @@ class Engine:
         self._last_now = now
         eff = self._filter(valid, dt, now)
         valves = [r.valve for r in valid if r.valve is not None]
-        # alleen kleppen van kamers die niet (duidelijk) boven hun doel zitten tellen als warmtevraag
-        dvalves = [r.valve for r in valid if r.valve is not None and eff.get(r.name, 0.0) > -s.room_above_k]
+        # gebundelde warmtevraag: pas starten als een kamer demand_start_k onder doel zit (met open klep);
+        # draait hij, dan blijft hij aan zolang een kamer met open klep nog onder doel + charge_k zit
         deficits = list(eff.values())
-        calling = any(v >= s.room_valve_on for v in dvalves) or any(d >= s.room_deficit_on for d in deficits)
-        holding = any(v > s.room_valve_off for v in dvalves) or any(d > s.room_deficit_off for d in deficits)
+        dv = [(eff.get(r.name, 0.0), r.valve) for r in valid]
+        calling = any(d >= s.demand_start_k - 0.05 and (v is None or v >= s.room_valve_on) for d, v in dv)
+        holding = any((d > s.room_deficit_off) if v is None else (v > s.room_valve_off and d > -s.charge_k + 0.05)
+                      for d, v in dv)
         self._update_demand(calling, holding, now)
         worst = max(deficits, default=0.0)
         level = (sum(valves) / len(valves)) if valves else None

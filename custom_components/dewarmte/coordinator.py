@@ -33,6 +33,7 @@ from .writes import WriteGuard
 HARD_BLOCKS = ("kritieke Modbus-data niet vers", "storing actief", "ontdooien actief")
 TRV_SETPOINT_MARGIN = 4.0   # TRV-setpoint = kamerdoel + marge, zodat de TRV zelf nooit dichtknijpt
 TRV_SETPOINT_MAX = 25.0
+SENSOR_STALE_S = 1800      # kamersensor zo lang stil: terugvallen op de TRV-sensor
 
 _LOGGER = logging.getLogger(__name__)
 SLAVE_NAMES = {1: "SunRain (pomp AO)", 2: "Pomp T", 5: "Meter pomp AO", 7: "Meter pomp T",
@@ -962,6 +963,15 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             if err:
                 rs.fan_t = 0.0
 
+    def _stale(self, entity_id: str | None, now: float) -> bool:
+        """Kamersensor die al SENSOR_STALE_S niets heeft gemeld: niet meer gebruiken (terugval: TRV-sensor)."""
+        st = self.hass.states.get(entity_id) if entity_id else None
+        seen = getattr(st, "last_reported", None) or getattr(st, "last_updated", None) if st is not None else None
+        try:
+            return seen is not None and now - seen.timestamp() > SENSOR_STALE_S
+        except (AttributeError, TypeError):
+            return False
+
     async def _svc(self, domain: str, service: str, data: dict) -> str | None:
         try:
             await asyncio.wait_for(self.hass.services.async_call(domain, service, data, blocking=True), 30)
@@ -1014,7 +1024,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         for cfg in self.room_cfgs:
             key, rs = cfg.key, ctl.state[cfg.key]
             trv = self.hass.states.get(cfg.trv)
-            tr = self._num(cfg.sensor)
+            tr = None if self._stale(cfg.sensor, now) else self._num(cfg.sensor)
+            stale = tr is None and cfg.sensor is not None
             if tr is None and trv is not None:
                 tr = _f(trv.attributes.get("current_temperature"))
             fan_st = self.hass.states.get(cfg.fan) if cfg.fan else None
@@ -1042,7 +1053,12 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
             ctl.observe(key, now, tr, to, ts_meas if flowing else ts_ctrl, flowing)
             target, t_why = self._room_target(key, cfg, now, home, vac)
             targets[key], temps[key] = target, tr
-            dec = ctl.decide(key, now, tr, target, to, ts_ctrl, flowing)     # setpoint: geen klepgeschuif bij opstarten
+            ctrl_t = target
+            if target is not None and self.engine.demand and ctl.mode.get(key, "heat") != "off":
+                ctrl_t = target + self.engine.s.charge_k           # pomp draait: kamers laden mee tot doel + marge
+                if key in p.capped:
+                    ctrl_t = min(ctrl_t, max(target, p.s.room_max))
+            dec = ctl.decide(key, now, tr, ctrl_t, to, ts_ctrl, flowing)     # setpoint: geen klepgeschuif bij opstarten
             if active:
                 write = dec["write"] or (not rs.trv_ok and now - rs.u_t >= 600)     # niet bevestigd: opnieuw
                 old_pct = None if rs.u is None else int(round(rs.u * 100))
@@ -1060,7 +1076,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                 "mode": ctl.mode.get(key, "heat"), "manual": key in ctl.manual, "valve": valve_now,
                 "valve_want": None if dec["u"] is None else round(dec["u"] * 100), "valve_reason": dec["why"],
                 "fan": round(rs.fan * 100) if cfg.fan else None, "fan_ok": fan_ok if cfg.fan else None,
-                "window": now < rs.window_until, "trv_ok": rs.trv_ok, "heating": flowing and (rs.u or 0) > 0,
+                "window": now < rs.window_until, "trv_ok": rs.trv_ok, "sensor_stale": stale,
+                "charge_target": ctrl_t, "heating": flowing and (rs.u or 0) > 0,
                 "model": {"afgifte_a": round(m.a, 3), "fan_af": round(m.af, 3) if cfg.fan else None,
                           "verlies_b": round(m.b, 4), "winst_d": round(m.d, 2),
                           "geleerd": round(m.confidence * 100), "metingen": m.n_all,
