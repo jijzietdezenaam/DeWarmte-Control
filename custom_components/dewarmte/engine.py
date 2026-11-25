@@ -270,6 +270,9 @@ class Engine:
             if source_support:
                 target = max(target, s.dhw_source_supply)
             target = round(min(max(target, s.min_supply), s.max_supply), 1)
+        elif self.season and inp.on_773:
+            # geen vraag maar de unit draait nog uit (minimale looptijd/herstart): niet op een oud, hoog setpoint
+            target = round(min(max(base + self.offset, s.min_supply), s.max_supply), 1)
 
         # aan/uit met vertragingen
         if self._t0 is None:

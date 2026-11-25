@@ -364,6 +364,9 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.8.8: lage aanvoer ook tijdens het uitdraaien
+Is er geen warmtevraag meer, maar draait de unit nog zijn minimale looptijd uit (of net na een herstart), dan krijgt hij nu het basis-aanvoersetpoint: stooklijn en kamermodellen, zonder bijsturing. Voorheen bleef het laatste, vaak hogere setpoint staan.
+
 ## Nieuw in 3.8.7: aanvoer omlaag zodra de kamers warm zijn
 - De klepbijsturing liep vast op +3,5 °C. Ze was opgelopen door de TRV-fout van vóór 3.8.2, en kwam daarna niet meer omlaag. Dat kwam doordat de kleppen bij het doorladen juist wijd open staan.
 - De bijsturing gaat nu ook **omlaag als alle kamers minstens 0,1 °C boven hun doel zitten**, ook als de kleppen dan open staan. Omhoog gaat ze alleen bij een echt tekort.
