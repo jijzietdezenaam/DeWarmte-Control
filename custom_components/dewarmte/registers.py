@@ -209,20 +209,23 @@ class Raw:
     name: str
     unit: str | None
     writable: bool
+    reg: Reg | None = None   # vooraf gemaakt voor decode() (niet elke cyclus opnieuw)
 
 
 RAW: list[Raw] = []
 for _s, _a, _b, _w, _sc, _sg, _n, _u, _wr, _lo, _hi in PARAMS:
     _k = f"r{_s}_{_a}" + ("" if _b is None else f"_{_b}")
-    RAW.append(Raw(_k, _s, _a, _b, _w, _sc, _sg, _n, _u, bool(_wr)))
+    RAW.append(Raw(_k, _s, _a, _b, _w, _sc, _sg, _n, _u, bool(_wr),
+                   Reg(_k, _s, _a, _w, _sc, _sg) if _b is None else None))
 
 
 def decode_raw(per_slave: dict[int, dict[int, int]]) -> dict[str, float | bool | None]:
     out: dict[str, float | bool | None] = {}
+    empty: dict[int, int] = {}
     for r in RAW:
-        words = per_slave.get(r.slave, {})
-        if r.bit is None:
-            out[r.key] = decode(Reg(r.key, r.slave, r.addr, r.words, r.scale, r.signed), words)
+        words = per_slave.get(r.slave, empty)
+        if r.reg is not None:
+            out[r.key] = decode(r.reg, words)
         elif r.addr not in words:
             out[r.key] = None
         elif r.bit == "lo":
