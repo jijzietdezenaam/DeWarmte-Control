@@ -364,6 +364,18 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.8.5: verlaging per kamer bij afwezig en dure stroom
+In de kamerregeling kun je per kamer achter de nachttemperatuur `afwezig=K` en `duur=K` zetten:
+```
+climate.woonkamer_2 | Woonkamer | sensor.… | climate.… | number.… | number.… | 20 | 19 | fan.jaga | afwezig=1 | duur=0,5
+climate.slaapkamer_finn | Slaapkamer Finn | sensor.… | climate.… | number.… | number.… | 18,5 | 18,5 | afwezig=1 | duur=1
+```
+- `afwezig=1`: 1 K lager zolang niemand thuis is (zonder: de algemene instelling "Niemand thuis").
+- `duur=0,5`: bij dure stroom maximaal 0,5 K lager (zonder: "Prijsslim: max. laten zakken"). De algemene
+  instelling is ook de bovengrens van de prijsplanner; zet die minstens op de grootste `duur`.
+- Afwezig en duur **stapelen niet**: de grootste verlaging telt.
+- De aanvoer gaat mee met de gemiddelde verlaging die de kamers werkelijk krijgen.
+
 ## Nieuw in 3.8.4: lichter voor Home Assistant
 - **Ruwe registers standaard uit.** De ca. 300 ruwe registersensoren en 240 statusbits worden bij een nieuwe
   installatie uitgeschakeld aangemaakt (behalve de registers die het dashboard gebruikt). Bestaande entiteiten
