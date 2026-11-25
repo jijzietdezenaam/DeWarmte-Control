@@ -364,6 +364,11 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.8.7: aanvoer omlaag zodra de kamers warm zijn
+- De klepbijsturing liep vast op +3,5 °C. Ze was opgelopen door de TRV-fout van vóór 3.8.2, en kwam daarna niet meer omlaag. Dat kwam doordat de kleppen bij het doorladen juist wijd open staan.
+- De bijsturing gaat nu ook **omlaag als alle kamers minstens 0,1 °C boven hun doel zitten**, ook als de kleppen dan open staan. Omhoog gaat ze alleen bij een echt tekort.
+- Bij de update begint de opgeslagen bijsturing één keer opnieuw bij 0.
+
 ## Nieuw in 3.8.6: geen blinde klepstand na herstart
 Direct na een herstart van Home Assistant hebben kamersensoren en TRV's soms nog geen waarde. DeWarmte zette de
 klep dan op 50 %; nu blijft de klep onaangeroerd tot er een kamertemperatuur is (meestal binnen een minuut).

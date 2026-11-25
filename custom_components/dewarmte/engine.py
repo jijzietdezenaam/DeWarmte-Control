@@ -34,6 +34,7 @@ class Settings:
     valve_high: float = 90.0               # meest open klep gemiddeld ≥ dit en echt tekort: aanvoer omhoog
     valve_low: float = 60.0                # meest open klep gemiddeld ≤ dit en geen tekort: aanvoer omlaag
     trim_deficit_up: float = 0.3
+    trim_down_k: float = -0.1              # alle kamers op of boven doel: omlaag, ook als kleppen (doorladen) open staan
     trim_freeze_min: float = 60.0          # na een doelwijziging (preset) eerst niet bijsturen
     # preset-stappen (prijs/nachtverlaging): aanvoer meteen een stukje mee
     ff_k: float = 0.5                      # K aanvoer per K kamerdoel boven/onder het gebruikelijke doel
@@ -166,7 +167,7 @@ class Engine:
     def __init__(self, settings: Settings, state: dict | None = None) -> None:
         self.s = settings
         st = state or {}
-        fresh = st.get("v") != 3               # 3.3: oude (vastgelopen) offset niet overnemen
+        fresh = st.get("v") != 4               # 3.8.7: opgelopen klepbijsturing (TRV-dichtknijpfout) niet overnemen
         self.offset = 0.0 if fresh else float(st.get("offset", 0.0))
         self.trim = 0.0 if fresh else float(st.get("trim", 0.0))
         self._refs: dict[str, deque] = {k: deque(v, maxlen=144) for k, v in (st.get("refs") or {}).items()}
@@ -200,7 +201,7 @@ class Engine:
         self._dhw_changed: float | None = None
 
     def export_state(self) -> dict:
-        return {"v": 3, "offset": self.offset, "trim": self.trim, "last_hot": self.last_hot,
+        return {"v": 4, "offset": self.offset, "trim": self.trim, "last_hot": self.last_hot,
                 "refs": {k: list(v) for k, v in self._refs.items()}}
 
     def _held(self, key: str, cond: bool, now: float, minutes: float) -> bool:
@@ -410,9 +411,9 @@ class Engine:
         if vmax >= s.valve_high and worst >= s.trim_deficit_up:
             self.trim = min(s.trim_max, self.trim + s.trim_step)
             self.trim_reason = f"klep {vmax:.0f}% en tekort {worst:.1f} K: +{s.trim_step:g}"
-        elif vmax <= s.valve_low and worst <= 0.1:
+        elif (vmax <= s.valve_low and worst <= 0.1) or worst <= s.trim_down_k:
             self.trim = max(s.trim_min, self.trim - s.trim_step)
-            self.trim_reason = f"klep {vmax:.0f}% zonder tekort: −{s.trim_step:g}"
+            self.trim_reason = f"klep {vmax:.0f}%, tekort {worst:.1f} K: −{s.trim_step:g}"
         else:
             self.trim_reason = f"klep {vmax:.0f}%, tekort {worst:.1f} K: gelijk"
 
