@@ -188,6 +188,14 @@ def test_trim_down_when_all_rooms_above_target_even_with_open_valves():
     assert e.trim <= 2.0, e.trim
     assert eng.Engine(eng.Settings(), {"v": 4, "trim": 3.5}).trim == 0.0   # opgelopen bijsturing uit 3.8.8 niet overnemen
 
+def test_silent_first_when_cold_and_ramp_is_not_shortfall():
+    e = eng.Engine(eng.Settings(normal_when_cold=0, keep_on_below=-10))
+    cold = dict(outdoor=-1.0, rooms=rooms(80, 19.8, 20.5), on_773=1, f_comp=40)
+    modes = [e.update(inp(t, t_supply=22, **cold))["power_mode_desired"] for t in range(0, 19 * 60, 30)]
+    assert all(m == eng.SILENT for m in modes), modes                     # aanloop: koud water telt niet
+    later = [e.update(inp(t, t_supply=22, **cold))["power_mode_desired"] for t in range(19 * 60, 45 * 60, 30)]
+    assert later[0] == eng.SILENT and later[-1] == eng.NORMAL             # na aanloop + 10 min tekort: Normaal
+
 def test_trv_sensor_room_counts_less():
     good = eng.Engine(eng.Settings()); trv = eng.Engine(eng.Settings())
     r_good = [eng.Room("k", True, "heat", 19.5, 20.5, 100)]

@@ -364,6 +364,11 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.9.0: bij kou eerst Stil
+- Met `normal_when_cold = 0` start de pomp ook onder de vorstgrens in **Stil**. Hij schakelt pas naar Normaal als het aanvoersetpoint 10 minuten lang minstens 2 °C niet gehaald wordt.
+- Dat tekort telt pas mee **20 minuten na het starten of na het ontdooien**. Het water moet dan eerst kunnen opwarmen, en dat opwarmen is geen gebrek aan vermogen.
+- Onder −9 °C draait de pomp altijd minimaal op Normaal.
+
 ## Nieuw in 3.8.9: opwarmen is geen tekort, warmtemeter alleen melden met flow
 - **Klepbijsturing:** opwarmen na een doelwijziging is geen tekort. Bijvoorbeeld 's ochtends, bij thuiskomen of na een prijsverlaging staan de kleppen vol open met een kamer onder doel. De klepbijsturing gaat daar de eerste 4 uur na de wijziging niet meer van omhoog. Omlaag mag ze in die tijd wel. Bij de update beginnen de opgeslagen bijsturing en offset één keer opnieuw bij 0.
 - **Warmtemeter:** staat de pomp stil, dan meet de warmtemeter geen flow en geeft hij altijd een foutcode. Een melding komt er nu alleen nog als er flow hoort te zijn: bij AO als de compressor draait, bij T als Pomp T draait.

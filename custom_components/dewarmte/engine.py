@@ -65,6 +65,7 @@ class Settings:
     normal_when_cold: float = 1.0          # 1 = onder silent_release minimaal Normaal (niet eerst Stil)
     normal_floor_below: float = -9.0
     shortfall_normal_k: float = 2.0
+    ramp_grace_min: float = 20.0           # aanvoer na start/ontdooien eerst laten oplopen voor het opschalen telt
     shortfall_normal_min: float = 10.0
     shortfall_boost_k: float = 3.0
     shortfall_boost_min: float = 15.0
@@ -196,6 +197,7 @@ class Engine:
         self._unit_edge: float | None = None
         self._run_since: float | None = None      # compressor draait sinds
         self._t0: float | None = None             # eerste stap na (her)start
+        self._defrost_end: float | None = None    # laatste moment dat ontdooien actief was
         self._last_on: float | None = None
         self._dhw_target: float | None = None
         self._dhw_changed: float | None = None
@@ -307,7 +309,13 @@ class Engine:
         # vermogensmodus
         ref = inp.t_supply if s.setpoint_basis == "supply" else inp.t_return
         running = inp.f_comp is not None and inp.f_comp > 0
-        shortfall = (target - ref) if (target is not None and ref is not None and running) else None
+        if inp.defrost:
+            self._defrost_end = now
+        settled = (running and not inp.defrost and self._run_since is not None
+                   and now - self._run_since >= s.ramp_grace_min * 60
+                   and (self._defrost_end is None or now - self._defrost_end >= s.ramp_grace_min * 60))
+        # aanloop na start of ontdooien is geen tekort: dan niet opschalen
+        shortfall = (target - ref) if (target is not None and ref is not None and settled) else None
         # voorverwarmen op goedkope stroom mag nooit tot opschalen (Boost) leiden
         mode_short = None if shortfall is None else shortfall - max(0.0, inp.price_supply_lift or 0.0)
         room_short = worst - max(0.0, inp.plan_offset or 0.0)     # kamertekort t.o.v. het gewone doel
