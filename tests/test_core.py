@@ -179,14 +179,14 @@ def test_preset_step_feedforward_and_freeze():
     run(e, 0, 6 * 3600, rooms=rooms(70, 19.5, 19.5))                     # gebruikelijk doel 19,5
     d = run(e, 6 * 3600, 6 * 3600 + 50 * 60, rooms=rooms(100, 19.5, 20.5))   # goedkoop: +1 K
     assert d["feedforward"] == 0.5 and d["trim"] == 0.0                  # meteen +0,5, klepbijsturing wacht
-    assert "wacht" in d["trim_reason"]
+    assert "doelwijziging" in d["trim_reason"]
 
 def test_trim_down_when_all_rooms_above_target_even_with_open_valves():
-    e = eng.Engine(eng.Settings(), {"v": 4, "trim": 3.5})
+    e = eng.Engine(eng.Settings(), {"v": 5, "trim": 3.5})
     assert e.trim == 3.5
     run(e, 0, 2 * 3600, rooms=rooms(95, 20.8, 20.5))                      # doorladen: klep open, kamer boven doel
     assert e.trim <= 2.0, e.trim
-    assert eng.Engine(eng.Settings(), {"v": 3, "trim": 3.5}).trim == 0.0   # opgelopen bijsturing uit 3.8.6 niet overnemen
+    assert eng.Engine(eng.Settings(), {"v": 4, "trim": 3.5}).trim == 0.0   # opgelopen bijsturing uit 3.8.8 niet overnemen
 
 def test_trv_sensor_room_counts_less():
     good = eng.Engine(eng.Settings()); trv = eng.Engine(eng.Settings())

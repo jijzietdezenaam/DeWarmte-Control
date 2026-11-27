@@ -364,6 +364,11 @@ Voorheen gingen de kamers om de beurt: de ene kamer was op temperatuur, en daarn
 
 **Herstart:** de eerste 15 minuten na een herstart zet de regeling de pomp niet meer uit.
 
+## Nieuw in 3.8.9: opwarmen is geen tekort, warmtemeter alleen melden met flow
+- **Klepbijsturing:** opwarmen na een doelwijziging is geen tekort. Bijvoorbeeld 's ochtends, bij thuiskomen of na een prijsverlaging staan de kleppen vol open met een kamer onder doel. De klepbijsturing gaat daar de eerste 4 uur na de wijziging niet meer van omhoog. Omlaag mag ze in die tijd wel. Bij de update beginnen de opgeslagen bijsturing en offset één keer opnieuw bij 0.
+- **Warmtemeter:** staat de pomp stil, dan meet de warmtemeter geen flow en geeft hij altijd een foutcode. Een melding komt er nu alleen nog als er flow hoort te zijn: bij AO als de compressor draait, bij T als Pomp T draait.
+- **Label:** "uitdraaien zonder vraag" in plaats van het verkeerde "bronondersteuning".
+
 ## Nieuw in 3.8.8: lage aanvoer ook tijdens het uitdraaien
 Is er geen warmtevraag meer, maar draait de unit nog zijn minimale looptijd uit (of net na een herstart), dan krijgt hij nu het basis-aanvoersetpoint: stooklijn en kamermodellen, zonder bijsturing. Voorheen bleef het laatste, vaak hogere setpoint staan.
 

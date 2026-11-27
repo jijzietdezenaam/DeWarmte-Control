@@ -282,7 +282,8 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
                     "warmtevraag" if d.get("heat_demand") else "basislast")
             return "geen warmtevraag"
         if p["register"] == 769:
-            src = "warmtevraag" if d.get("heat_demand") else ("basislast" if d.get("base_load") else "bronondersteuning")
+            src = ("warmtevraag" if d.get("heat_demand") else "basislast" if d.get("base_load")
+                   else "bronondersteuning" if d.get("source_support") else "uitdraaien zonder vraag")
             return (f"{src}: stooklijn {d.get('base_curve')} + preset {d.get('feedforward')} + klep {d.get('trim')}"
                     f" + offset {d.get('offset')} ({d.get('trim_reason')})")
         return ""
@@ -557,7 +558,9 @@ class DeWarmteCoordinator(DataUpdateCoordinator[dict]):
         pt_code = ", ".join(f"{k[-1]}: {int(x)}" for k, x in pt_err.items() if x)
         events = self.alerts.update(time.monotonic(), bool(status.get(1, {}).get("ok")), v.get("fault_active"),
                                     ao_code, pt_fault, pt_code or "–", [r for r in rows if r["id"] not in excl],
-                                    {"AO": v.get("ao_hm_error"), "T": v.get("pt_hm_error")})
+                                    {"AO": v.get("ao_hm_error") if (v.get("f_comp") or 0) > 0 else 0,
+                                     "T": v.get("pt_hm_error") if (v.get("pt_pm_w") or 0) >= 100 else 0})
+                                    # warmtemeter zonder flow (pomp stil) geeft altijd een foutcode: dan niet melden
         for kind, text in events:
             title = "DeWarmte: hersteld" if kind == "hersteld" else "DeWarmte: let op"
             self.last_alerts = (self.last_alerts + [{"tijd": time.strftime("%d-%m %H:%M"), "soort": kind,
